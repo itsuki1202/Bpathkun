@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv/
+pip-log.txt
+
+# 実データファイル（個人情報を含む）
+data/**/current_performance.csv
+data/**/daily_orders.csv
+data/**/daily_terminals.csv
+data/**/current_month_log.csv
+data/annual/
+
+# Streamlit secrets（APIキーなど）
+.streamlit/secrets.toml
+
+# テスト・キャッシュ
+.pytest_cache/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# サンプルデータ・テスト用ファイル
+sample_performance_data.csv
+sample_performance_data.xlsx
+test_config.xlsx
+
