@@ -23,10 +23,14 @@ PERFORMANCE_ITEMS = {
 # Mapping from Legacy System Column Name (English) to New Display Name (Japanese)
 # This allows old sample data to be partially mapped if uploaded
 COLUMN_MAPPING = {
-    "Name": "氏名",
-    "Shop": "店舗",
-    "Team": "チーム",
-    "Agency": "代理店",
+    "Name": "スタッフ名",
+    "Shop": "店舗名",
+    "Team": "チーム名",
+    "Agency": "代理店名",
+    "氏名": "スタッフ名",
+    "店舗": "店舗名",
+    "チーム": "チーム名",
+    "代理店": "代理店名",
     # Legacy mappings (best effort)
     "Smartphone_Total": "スマホ総販",
     "dCard_Individual": "GOLD", # Approximate
@@ -41,12 +45,10 @@ COLUMN_MAPPING = {
 REVERSE_COLUMN_MAPPING = {v: k for k, v in COLUMN_MAPPING.items()}
 
 REQUIRED_COLUMNS_JP = [
-    "氏名", "店舗", "チーム", "代理店"
+    "スタッフ名", "店舗名", "チーム名", "代理店名"
 ]
 
-REQUIRED_COLUMNS = [
-    "氏名", "店舗", "チーム", "代理店"
-] + list(PERFORMANCE_ITEMS.keys())
+REQUIRED_COLUMNS = REQUIRED_COLUMNS_JP + list(PERFORMANCE_ITEMS.keys())
 
 # 新フォーマットの列定義（成績データ登録用テンプレート）
 NEW_FORMAT_COLUMNS = ["スタッフ名", "店舗名", "チーム名", "代理店名", "基準時間"] + list(PERFORMANCE_ITEMS.keys())

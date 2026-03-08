@@ -104,3 +104,37 @@ def apply_user_master_merge(df, month=None):
         merged = merged.drop(columns=final_drops)
         
     return merged
+
+def archive_month_data(month, df=None):
+    """
+    指定した年月(YYYYMM)のフォルダに、現在のユーザーマスターと評価項目設定、
+    および実績データを保存する。
+    """
+    # 現在の最新設定をロード
+    master = load_user_master()
+    config = load_scoring_config()
+    
+    # アーカイブ先に保存
+    save_user_master(master, month=month)
+    save_scoring_config(config, month=month)
+    
+    # 実績データがあればCSVとして保存
+    if df is not None:
+        filepath = get_file_path('performance_data.csv', month=month)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        df.to_csv(filepath, index=False, encoding='utf-8-sig')
+    
+    return True
+
+def load_performance_data(month=None):
+    """
+    指定した月、または最新の実績データをロードする。
+    """
+    filepath = get_file_path('performance_data.csv', month=month)
+    if os.path.exists(filepath):
+        try:
+            return pd.read_csv(filepath)
+        except Exception as e:
+            print(f"Error loading performance data: {e}")
+            return None
+    return None

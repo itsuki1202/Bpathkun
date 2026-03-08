@@ -1,0 +1,196 @@
+{
+  "users": [
+    {
+      "name": "小橋実央",
+      "shop": "ドコモショップ倉敷店",
+      "team": "小橋女学院",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "箱崎琳",
+      "shop": "ドコモショップ倉敷店",
+      "team": "小橋女学院",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "岡本陽子",
+      "shop": "ドコモショップ倉敷店",
+      "team": "小橋女学院",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "西山未海",
+      "shop": "ドコモショップ倉敷店",
+      "team": "小橋女学院",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "高橋直也",
+      "shop": "ドコモショップ倉敷店",
+      "team": "エースと呼んでくれ",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "高橋美和",
+      "shop": "ドコモショップ倉敷店",
+      "team": "エースと呼んでくれ",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "家原優賀",
+      "shop": "ドコモショップ倉敷店",
+      "team": "エースと呼んでくれ",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "高角健太郎",
+      "shop": "ドコモショップ倉敷店",
+      "team": "MGN4",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "四倉祐貴",
+      "shop": "ドコモショップ倉敷店",
+      "team": "MGN4",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "青江光洋",
+      "shop": "ドコモショップ倉敷店",
+      "team": "MGN4",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "日下梨紗",
+      "shop": "ドコモショップ水島店",
+      "team": "Co-shift",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "渡辺邦彦",
+      "shop": "ドコモショップ水島店",
+      "team": "Co-shift",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "居森明彦",
+      "shop": "ドコモショップ水島店",
+      "team": "Co-shift",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "石田理香",
+      "shop": "ドコモショップ水島店",
+      "team": "Co-shift",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "鶴田絵梨香",
+      "shop": "ドコモショップ水島店",
+      "team": "なんとかする4",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "三原由香",
+      "shop": "ドコモショップ水島店",
+      "team": "なんとかする4",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "美濃勝志",
+      "shop": "ドコモショップ水島店",
+      "team": "なんとかする4",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "河田順子",
+      "shop": "ドコモショップ水島店",
+      "team": "なんとかする4",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "福田大樹",
+      "shop": "ドコモショップ水島店",
+      "team": "純子とメガネたち",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "金尾純子",
+      "shop": "ドコモショップ水島店",
+      "team": "純子とメガネたち",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "小澤裕大",
+      "shop": "ドコモショップ水島店",
+      "team": "純子とメガネたち",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "藤田充教",
+      "shop": "ドコモショップ児島店",
+      "team": "炭水化物",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "鳥谷大介",
+      "shop": "ドコモショップ児島店",
+      "team": "炭水化物",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "中田歩美",
+      "shop": "ドコモショップ児島店",
+      "team": "炭水化物",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "平田達也",
+      "shop": "ドコモショップ児島店",
+      "team": "炭水化物",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "鍵本拓也",
+      "shop": "ドコモショップ児島店",
+      "team": "炭水化物",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "高橋しのぶ",
+      "shop": "ドコモショップ児島店",
+      "team": "ハイスクール!しのぶ組",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "滝澤創強",
+      "shop": "ドコモショップ児島店",
+      "team": "ハイスクール!しのぶ組",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "太田洋盛",
+      "shop": "ドコモショップ児島店",
+      "team": "ハイスクール!しのぶ組",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "玉木聡彦",
+      "shop": "ドコモショップ児島店",
+      "team": "ハイスクール!しのぶ組",
+      "standard_hours": 7.5
+    },
+    {
+      "name": "古谷隆明",
+      "shop": "ドコモショップ児島店",
+      "team": "ハイスクール!しのぶ組",
+      "standard_hours": 7.5
+    }
+  ],
+  "shop_managers": {
+    "ドコモショップ倉敷店": "飯塚優樹",
+    "ドコモショップ児島店": "中村有作 ",
+    "ドコモショップ水島店": "守谷有貴"
+  },
+  "last_updated": "2026/03/08 20:00:32"
+}

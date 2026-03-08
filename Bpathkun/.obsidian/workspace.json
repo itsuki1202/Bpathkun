@@ -1,0 +1,194 @@
+{
+  "main": {
+    "id": "c8d9f7f925e5692a",
+    "type": "split",
+    "children": [
+      {
+        "id": "849d5089fd1c125b",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "285a532180402a73",
+            "type": "leaf",
+            "state": {
+              "type": "canvas",
+              "state": {
+                "file": "ブライトパスくん.canvas",
+                "viewState": {
+                  "x": 600.0092334108982,
+                  "y": -302.1861466774426,
+                  "zoom": -0.6666666666666667
+                }
+              },
+              "icon": "lucide-layout-dashboard",
+              "title": "ブライトパスくん"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "fd0a1fe10ce56314",
+    "type": "split",
+    "children": [
+      {
+        "id": "83979c967b2166ff",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "ffa832625a573295",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "ファイルエクスプローラ"
+            }
+          },
+          {
+            "id": "a7becd19bce0ad6c",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "検索"
+            }
+          },
+          {
+            "id": "932697b3d5e7e70d",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "ブックマーク"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 200
+  },
+  "right": {
+    "id": "b731b5fc3a132a55",
+    "type": "split",
+    "children": [
+      {
+        "id": "6df95f339adc1dc3",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5b50501a717fe4c4",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "ブライトパスくん.canvas",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "ブライトパスくんへのバックリンク"
+            }
+          },
+          {
+            "id": "f255688af6e80146",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "ブライトパスくん.canvas",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "ブライトパスくんからのアウトゴーイングリンク"
+            }
+          },
+          {
+            "id": "bd236c8cfe6ec37f",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "タグ"
+            }
+          },
+          {
+            "id": "cc9b7a417135a57c",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "すべてのプロパティ"
+            }
+          },
+          {
+            "id": "66882f71b0558ca0",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "ブライトパスくん.canvas",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "ブライトパスくんのアウトライン"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:クイックスイッチャーを開く": false,
+      "graph:グラフビューを開く": false,
+      "canvas:新規キャンバスを作成": false,
+      "daily-notes:今日のデイリーノートを開く": false,
+      "templates:テンプレートを挿入": false,
+      "command-palette:コマンドパレットを開く": false,
+      "bases:新規ベースを作成": false
+    }
+  },
+  "active": "285a532180402a73",
+  "lastOpenFiles": [
+    "ブライトパスくん.png",
+    "ブライトパスくん.canvas"
+  ]
+}
