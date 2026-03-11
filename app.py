@@ -11,9 +11,11 @@ from utils.calculation import calculate_scores, calculate_denominators, aggregat
 from data_loader import load_data
 import plotly.graph_objects as go
 from master_data import PERFORMANCE_ITEMS, NEW_FORMAT_COLUMNS
-
-# Admin Password (hardcoded for simplicity as requested)
-ADMIN_PASSWORD = "admin123"
+from utils.auth_manager import (
+    load_auth_config, save_auth_config, hash_password,
+    add_user, delete_user, reset_password, log_login, load_login_log, get_all_users
+)
+import streamlit_authenticator as stauth
 
 def normalize_text(text):
     """姓名や店舗名・チーム名の空白・記号・表記揺れを徹底排除して正規化する"""
@@ -74,7 +76,130 @@ def admin_page(config, user_master, target_month=None):
     else:
         st.header("管理者設定")
     
-    tab1, tab2, tab3, tab4 = st.tabs(["メンバー管理", "評価項目設定", "成績データ管理", "🔍 計算チェック"])
+    tab1, tab2, tab3, tab4, tab_users, tab_log = st.tabs([
+        "メンバー管理", "評価項目設定", "成績データ管理", "🔍 計算チェック",
+        "👤 ユーザー管理", "📋 ログチェック"
+    ])
+
+    # ============================================================
+    # タブ: ユーザー管理（管理者のみ）
+    # ============================================================
+    with tab_users:
+        # 管理者ロールチェック
+        if st.session_state.get("user_role") != "admin":
+            st.warning("⛔ この画面は管理者のみアクセスできます。")
+        else:
+            st.subheader("👤 ユーザー管理")
+            _ac = load_auth_config()
+
+            # --- 登録済みユーザー一覧 ---
+            st.markdown("#### 登録済みユーザー一覧")
+            _users = get_all_users(_ac)
+            if _users:
+                _users_df = pd.DataFrame(_users)
+                _users_df.columns = ["ユーザーID", "表示名", "メール", "ロール"]
+                st.dataframe(_users_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("ユーザーが登録されていません")
+
+            st.markdown("---")
+
+            # --- ユーザー追加 ---
+            st.markdown("#### ✅ ユーザーを追加")
+            with st.form("add_user_form", clear_on_submit=True):
+                _col1, _col2 = st.columns(2)
+                with _col1:
+                    _new_uid    = st.text_input("ユーザーID（ログイン用・英数字）", placeholder="例: tanaka01")
+                    _new_name   = st.text_input("表示名", placeholder="例: 田中 太郎")
+                with _col2:
+                    _new_email  = st.text_input("メールアドレス（任意）", placeholder="例: tanaka@example.com")
+                    _new_pw     = st.text_input("初期パスワード", type="password")
+                    _new_role   = st.selectbox("ロール", ["viewer", "admin"])
+                if st.form_submit_button("追加する"):
+                    _ok, _msg = add_user(_ac, _new_uid, _new_name, _new_email, _new_pw, _new_role)
+                    if _ok:
+                        st.success(_msg)
+                        st.rerun()
+                    else:
+                        st.error(_msg)
+
+            st.markdown("---")
+
+            # --- パスワードリセット ---
+            st.markdown("#### 🔑 パスワードをリセット")
+            with st.form("reset_pw_form", clear_on_submit=True):
+                _uid_list = [u["username"] for u in _users]
+                _reset_uid = st.selectbox("対象ユーザー", _uid_list) if _uid_list else None
+                _reset_pw  = st.text_input("新しいパスワード", type="password")
+                if st.form_submit_button("パスワードを変更する"):
+                    if _reset_uid:
+                        _ok2, _msg2 = reset_password(_ac, _reset_uid, _reset_pw)
+                        if _ok2:
+                            st.success(_msg2)
+                        else:
+                            st.error(_msg2)
+
+            st.markdown("---")
+
+            # --- ユーザー削除 ---
+            st.markdown("#### 🗑️ ユーザーを削除")
+            with st.form("del_user_form", clear_on_submit=True):
+                _del_uid_list = [u["username"] for u in _users if u["username"] != "admin"]
+                _del_uid = st.selectbox("削除対象ユーザー", _del_uid_list) if _del_uid_list else None
+                if st.form_submit_button("削除する"):
+                    if _del_uid:
+                        _ok3, _msg3 = delete_user(_ac, _del_uid)
+                        if _ok3:
+                            st.success(_msg3)
+                            st.rerun()
+                        else:
+                            st.error(_msg3)
+
+    # ============================================================
+    # タブ: ログチェック（管理者のみ）
+    # ============================================================
+    with tab_log:
+        if st.session_state.get("user_role") != "admin":
+            st.warning("⛔ この画面は管理者のみアクセスできます。")
+        else:
+            st.subheader("📋 ログイン履歴")
+            _log_df = load_login_log()
+            if _log_df.empty:
+                st.info("ログイン履歴はまだありません")
+            else:
+                # フィルター
+                _log_col1, _log_col2 = st.columns(2)
+                with _log_col1:
+                    _filter_user = st.selectbox(
+                        "ユーザーで絞り込み",
+                        ["全員"] + list(_log_df["username"].dropna().unique())
+                    )
+                with _log_col2:
+                    _filter_status = st.selectbox(
+                        "ステータスで絞り込み",
+                        ["全て", "success（成功）", "failed（失敗）"]
+                    )
+
+                _filtered = _log_df.copy()
+                if _filter_user != "全員":
+                    _filtered = _filtered[_filtered["username"] == _filter_user]
+                if _filter_status == "success（成功）":
+                    _filtered = _filtered[_filtered["status"] == "success"]
+                elif _filter_status == "failed（失敗）":
+                    _filtered = _filtered[_filtered["status"] == "failed"]
+
+                # 表示列名を日本語化
+                _filtered_display = _filtered.rename(columns={
+                    "timestamp":    "日時",
+                    "username":     "ユーザーID",
+                    "display_name": "表示名",
+                    "status":       "ステータス",
+                    "message":      "メッセージ",
+                })
+                st.dataframe(_filtered_display, use_container_width=True, hide_index=True)
+                st.caption(f"合計 {len(_filtered)} 件")
+
+
     
     # --- Tab 1: Member Management ---
     with tab1:
@@ -2676,8 +2801,55 @@ def _build_excel_bytes_for_download(dl_df, dl_config, dl_target_month):
 
 def main():
     st.set_page_config(page_title="ブライトパスくん", layout="wide")
+
+    # ============================================================
+    # ログイン認証ゲート（ページ全体を保護）
+    # ============================================================
+    _auth_config = load_auth_config()
+    authenticator = stauth.Authenticate(
+        _auth_config["credentials"],
+        _auth_config["cookie"]["name"],
+        _auth_config["cookie"]["key"],
+        _auth_config["cookie"]["expiry_days"],
+    )
+
+    # ログイン画面を表示
+    name, authentication_status, username = authenticator.login(
+        location="main",
+        fields={
+            "Form name": "🔐 ブライトパスくん ログイン",
+            "Username": "ユーザーID",
+            "Password": "パスワード",
+            "Login": "ログイン",
+        }
+    )
+
+    if authentication_status is False:
+        # ログイン失敗
+        log_login(username or "(不明)", "", "failed", "パスワードまたはIDが違います")
+        st.error("❌ ユーザーIDまたはパスワードが違います")
+        st.stop()
+    elif authentication_status is None:
+        # 未入力（初期表示）
+        st.warning("ユーザーIDとパスワードを入力してください")
+        st.stop()
+    else:
+        # ログイン成功
+        user_role = _auth_config["credentials"]["usernames"].get(username, {}).get("role", "viewer")
+        # セッションにロールを保存
+        if st.session_state.get("_logged_username") != username:
+            # 新規ログイン時のみログ記録（ページリロードで二重記録しない）
+            log_login(username, name, "success", "ログイン成功")
+            st.session_state["_logged_username"] = username
+        st.session_state["user_role"] = user_role
+        st.session_state["auth_name"] = name
+        st.session_state["auth_username"] = username
+
+        # ログアウトボタン（サイドバー）
+        authenticator.logout(button_name="ログアウト", location="sidebar")
+
     st.title("ブライトパスくん")
-    
+
     # CSS injection
     # CSS injection for Material Design & Strict Layout
     st.markdown('''
@@ -2947,31 +3119,24 @@ def main():
 
     # --- Sidebar ---
     st.sidebar.header("メニュー")
-    
+
+    # ログインユーザー情報をサイドバーに表示
+    _auth_name_disp = st.session_state.get("auth_name", "")
+    _auth_role_disp = st.session_state.get("user_role", "viewer")
+    _role_label = "👑 管理者" if _auth_role_disp == "admin" else "👤 スタッフ"
+    st.sidebar.markdown(
+        f"<div style='font-size:0.85rem; color:#5F6368; margin-bottom:4px;'>ログイン中: <b>{_auth_name_disp}</b>　{_role_label}</div>",
+        unsafe_allow_html=True
+    )
+    st.sidebar.markdown("---")
+
+    # ロールベースで is_admin を決定（旧パスワード認証の代替）
+    st.session_state['is_admin'] = (_auth_role_disp == "admin")
+
     # State for Mode
     if 'current_mode' not in st.session_state:
         st.session_state['current_mode'] = "総合"
 
-    # Admin Login state
-    if 'is_admin' not in st.session_state:
-        st.session_state['is_admin'] = False
-        
-    with st.sidebar.expander("管理者メニュー"):
-        if not st.session_state['is_admin']:
-            password = st.text_input("パスワード", type="password")
-            if st.button("ログイン"):
-                if password == ADMIN_PASSWORD:
-                    st.session_state['is_admin'] = True
-                    st.rerun()
-                else:
-                    st.error("パスワードが違います")
-        else:
-            if st.button("ログアウト"):
-                st.session_state['is_admin'] = False
-                if st.session_state['current_mode'] == "設定 (Admin)":
-                    st.session_state['current_mode'] = "総合"
-                st.rerun()
-                
     st.sidebar.markdown("<p style='color: #5F6368; font-weight: bold; font-size: 0.9rem; margin-bottom: 0px;'>モード選択</p>", unsafe_allow_html=True)
     
     # Custom Button Navigation

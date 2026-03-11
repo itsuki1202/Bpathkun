@@ -4,3 +4,6 @@ numpy
 plotly
 openpyxl
 google-generativeai
+streamlit-authenticator==0.3.3
+bcrypt
+PyYAML

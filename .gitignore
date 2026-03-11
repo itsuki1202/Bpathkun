@@ -19,6 +19,10 @@ data/annual/
 # Streamlit secrets（APIキーなど）
 .streamlit/secrets.toml
 
+# 認証情報（パスワードを含むため絶対にGitHubに上げない）
+auth/config.yaml
+auth/login_log.csv
+
 # テスト・キャッシュ
 .pytest_cache/
 .coverage
