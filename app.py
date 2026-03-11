@@ -76,6 +76,15 @@ def admin_page(config, user_master, target_month=None):
     else:
         st.header("管理者設定")
     
+    # タブボタンのテキストが折り返されないようにCSSを注入
+    st.markdown("""
+    <style>
+    .stTabs [data-baseweb="tab"] {
+        white-space: nowrap;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     tab1, tab2, tab3, tab4, tab_users, tab_log = st.tabs([
         "メンバー管理", "評価項目設定", "成績データ管理", "🔍 計算チェック",
         "👤 ユーザー管理", "📋 ログチェック"
@@ -2805,6 +2814,18 @@ def main():
     # ============================================================
     # ログイン認証ゲート（ページ全体を保護）
     # ============================================================
+
+    # ログインフォームを画面中央に配置するCSS
+    st.markdown("""
+    <style>
+        /* ログインフォームを中央配置・幅を制限 */
+        [data-testid="stForm"] {
+            max-width: 400px !important;
+            margin: 0 auto !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
     _auth_config = load_auth_config()
     authenticator = stauth.Authenticate(
         _auth_config["credentials"],
@@ -3212,7 +3233,21 @@ def main():
                 )
         except Exception as _ex:
             st.sidebar.error(f"DLエラー: {_ex}")
-            
+
+    # --- サイドバー: 成績データ最終更新日時を表示 ---
+    if os.path.exists(_dl_perf_path):
+        try:
+            from datetime import datetime as _dt
+            _mtime = os.path.getmtime(_dl_perf_path)
+            _mtime_str = _dt.fromtimestamp(_mtime).strftime("%Y/%m/%d %H:%M:%S")
+            st.sidebar.markdown(
+                f"<div style='font-size:0.8rem; color:#5F6368; margin-top:8px;'>"
+                f"📊 データ最終更新<br><b>{_mtime_str}</b></div>",
+                unsafe_allow_html=True
+            )
+        except Exception:
+            pass
+
     mode = st.session_state['current_mode']
 
     # --- Global Data Loading ---
@@ -3245,6 +3280,17 @@ def main():
             if mode != "設定 (Admin)":
                 st.sidebar.warning("成績データが未登録です。管理者メニューからアップロードしてください。")
 
+
+    # --- ページ上部: 成績データ最終更新日時を表示（閲覧ページのみ） ---
+    _view_modes = {"総合", "順位", "件数", "成績詳細", "分析", "年間表彰"}
+    if mode in _view_modes and df is not None and os.path.exists(_dl_perf_path):
+        try:
+            from datetime import datetime as _dt2
+            _mtime2 = os.path.getmtime(_dl_perf_path)
+            _mtime2_str = _dt2.fromtimestamp(_mtime2).strftime("%Y/%m/%d %H:%M:%S")
+            st.caption(f"📊 データ最終更新: {_mtime2_str}")
+        except Exception:
+            pass
 
     # --- Routing ---
     if mode == "設定 (Admin)":

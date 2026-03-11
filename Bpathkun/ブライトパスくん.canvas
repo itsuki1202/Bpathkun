@@ -138,6 +138,26 @@
 			"height": 2200,
 			"color": "6"
 		}
+		{
+			"id": "node_login_spec",
+			"type": "text",
+			"text": "## 🔐 ログイン機能 設計・仕様\n\n### 使用ライブラリ\n- **`streamlit-authenticator`** (`stauth`) で認証UI・セッション管理\n- **`bcrypt`** でパスワードハッシュ化\n\n---\n\n### 認証ファイル構成\n```\nauth/\n├── config.yaml      ← ユーザー情報・Cookie設定\n└── login_log.csv    ← ログイン履歴\n```\n\n#### config.yaml の構造\n```yaml\ncredentials:\n  usernames:\n    admin:\n      name: 管理者\n      email: \"\"\n      password: $2b$12$...（bcryptハッシュ）\n      role: admin\n    viewer01:\n      name: 閲覧ユーザー\n      email: user@example.com\n      password: $2b$12$...\n      role: viewer\ncookie:\n  expiry_days: 1\n  key: brightpath_secret_key_2026\n  name: brightpath_auth\npreauthorized:\n  emails: []\n```\n\n---\n\n### ログインフロー\n```\n① アプリ起動\n   ↓\n② load_auth_config() で config.yaml を読込\n   auth/config.yaml が存在しない場合 → 空の構成を返す\n   ↓\n③ streamlit_authenticator.Authenticate() でオブジェクト生成\n   ↓\n④ authenticator.login() でログインフォーム表示\n   ↓\n⑤ 認証結果で分岐\n   ├ 成功 → session_state['authentication_status'] = True\n   │         session_state['username'] に ユーザーID を格納\n   │         session_state['name'] に 表示名 を格納\n   │         session_state['user_role'] に role (admin/viewer) を格納\n   │         log_login() でログ記録 (status: success)\n   │         → メインアプリを表示\n   ├ 失敗 → st.error() 表示\n   │         log_login() でログ記録 (status: failed)\n   └ 未入力 → st.warning() でガイド表示\n```\n\n---\n\n### セッション状態（session_state）\n| キー | 型 | 内容 |\n| --- | --- | --- |\n| `authentication_status` | bool/None | True=認証済み, False=失敗, None=未入力 |\n| `username` | str | ログイン中のユーザーID |\n| `name` | str | 表示名 |\n| `user_role` | str | `admin` または `viewer` |\n\n---\n\n### ロールによるアクセス制御\n| ロール | アクセス可能範囲 |\n| --- | --- |\n| `admin` | 全ページ＋管理者設定の全タブ（ユーザー管理・ログチェック含む） |\n| `viewer` | 閲覧ページのみ（管理者設定への入り口はタブに存在するが、ユーザー管理・ログチェックは `st.warning()` でブロック） |\n\n> **実装方法**: `tab_users` / `tab_log` の中で `st.session_state.get(\"user_role\") != \"admin\"` をチェック\n\n---\n\n### ログアウト\n- サイドバーに `authenticator.logout()` ボタンを配置\n- ログアウト時: セッション全クリア → ログインフォームへ戻る\n\n---\n\n### ログイン履歴（login_log.csv）\n**保存先**: `auth/login_log.csv`\n\n| 列名 | 内容 |\n| --- | --- |\n| `timestamp` | 日時（YYYY-MM-DD HH:MM:SS） |\n| `username` | ユーザーID |\n| `display_name` | 表示名 |\n| `status` | `success` / `failed` |\n| `message` | エラー内容など（任意） |\n\n- ファイル非存在時は自動生成（ヘッダー行込み）\n- 管理者設定 > ログチェックタブで閲覧・フィルタ可能",
+			"x": -1550,
+			"y": 3200,
+			"width": 560,
+			"height": 2400,
+			"color": "3"
+		},
+		{
+			"id": "node_user_admin",
+			"type": "text",
+			"text": "## 👤 ユーザー管理画面 仕様\n\n> 管理者設定 > **「👤 ユーザー管理」タブ**（`tab_users`）と **「📋 ログチェック」タブ**（`tab_log`）\n\n> [!IMPORTANT]\n> **管理者ロール (`admin`) のみアクセス可能。**\n> `viewer` ロールでアクセスすると `⛔ この画面は管理者のみアクセスできます。` を表示してブロック。\n\n---\n\n### 👤 ユーザー管理タブ（tab_users）\n\n#### 登録済みユーザー一覧\n- `get_all_users(config)` で取得した一覧を DataFrame 表示\n- 表示列: **ユーザーID / 表示名 / メール / ロール**\n- 取得元: `auth/config.yaml > credentials.usernames`\n\n---\n\n#### ✅ ユーザー追加フォーム\n| 入力項目 | 説明 |\n| --- | --- |\n| ユーザーID | ログイン用（英数字）。重複不可 |\n| 表示名 | 画面・ログに表示される名前 |\n| メールアドレス | 任意 |\n| 初期パスワード | `bcrypt` でハッシュ化して保存 |\n| ロール | `viewer`（閲覧者）/ `admin`（管理者） |\n\n- `add_user()` を呼び出し、成功で `st.rerun()`\n- バリデーション: ユーザーID・パスワードは必須\n\n---\n\n#### 🔑 パスワードリセットフォーム\n- 対象ユーザーをセレクトボックスで選択\n- 新しいパスワードを入力 → `reset_password()` を呼び出し\n- 取得元・更新先: `auth/config.yaml`\n\n---\n\n#### 🗑️ ユーザー削除フォーム\n- `admin` ユーザーは削除不可（保護）\n- 削除対象をセレクトボックスで選択 → `delete_user()` を呼び出し\n- 成功で `st.rerun()`\n\n---\n\n### 📋 ログチェックタブ（tab_log）\n\n- `load_login_log()` で `auth/login_log.csv` を読込\n- 表示列: 日時 / ユーザーID / 表示名 / ステータス / メッセージ\n- **フィルター機能**:\n  - ユーザーで絞り込み（セレクトボックス）\n  - ステータスで絞り込み（全て / success / failed）\n- 件数表示: `合計 N 件`\n\n---\n\n### データ操作関数（utils/auth_manager.py）\n| 関数 | 役割 |\n| --- | --- |\n| `load_auth_config()` | config.yaml 読込（非存在時は空構造を返す） |\n| `save_auth_config(config)` | config.yaml 上書き保存 |\n| `hash_password(plain)` | bcrypt でハッシュ化 |\n| `verify_password(plain, hashed)` | パスワード照合 |\n| `get_all_users(config)` | ユーザー一覧取得 |\n| `add_user(...)` | ユーザー追加 |\n| `delete_user(config, username)` | ユーザー削除（admin削除不可） |\n| `reset_password(config, username, pw)` | パスワードリセット |\n| `log_login(username, name, status, msg)` | ログイン履歴を追記 |\n| `load_login_log()` | 履歴をDataFrameで返す（降順ソート） |",
+			"x": -980,
+			"y": 3200,
+			"width": 500,
+			"height": 2000,
+			"color": "5"
+		}
 	],
 	"edges": [
 		{
@@ -244,6 +264,20 @@
 			"fromSide": "left",
 			"toNode": "node_admin_check",
 			"toSide": "right"
+		},
+		{
+			"id": "e16",
+			"fromNode": "node_admin_check",
+			"fromSide": "bottom",
+			"toNode": "node_login_spec",
+			"toSide": "top"
+		},
+		{
+			"id": "e17",
+			"fromNode": "node_login_spec",
+			"fromSide": "right",
+			"toNode": "node_user_admin",
+			"toSide": "left"
 		}
 	]
 }
