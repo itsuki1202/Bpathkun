@@ -375,8 +375,38 @@ def calculate_organization_scores(df_original, config, org_level='team', scored_
                 scores.append(score)
                 continue
             elif eval_type == 'shop_achievement':
-                shop_targets = item.get('shop_targets', {})
-                t_val = float(shop_targets.get(my_shop, 0))
+                # shop_achievement は「店舗全体の達成率」で全員同点が付く評価軸。
+                # チーム集計のとき、チーム分の実績合計だけでは店舗目標に届かず0点になるバグを防ぐため、
+                # scored_df の個人スコア（全員同点のはず）をそのまま引き継ぐ。
+                if scored_df is not None and new_col in scored_df.columns and org_col in scored_df.columns:
+                    team_score_val = scored_df[scored_df[org_col] == my_org][new_col].dropna()
+                    score = float(team_score_val.iloc[0]) if not team_score_val.empty else 0.0
+                else:
+                    shop_targets = item.get('shop_targets', {})
+                    t_val = float(shop_targets.get(my_shop, 0))
+                    if t_val <= 0:
+                        score = 0.0
+                    else:
+                        if df_original is not None and shop_col in df_original.columns and target_col in df_original.columns:
+                            shop_total = float(df_original[df_original[shop_col] == my_shop][target_col].sum())
+                        else:
+                            shop_total = val
+                        achievement_rate_fb = shop_total / t_val
+                        st_targets = item.get('targets', {})
+                        st_weights = item.get('weights', {})
+                        ar1 = float(st_targets.get('achievement_rate_1', 0) or 0)
+                        ar2 = float(st_targets.get('achievement_rate_2', 0) or 0)
+                        ar3 = float(st_targets.get('achievement_rate_3', 0) or 0)
+                        w1 = float(st_weights.get('w1', weight))
+                        w2 = float(st_weights.get('w2', 0))
+                        w3 = float(st_weights.get('w3', 0))
+                        rate_pct = achievement_rate_fb * 100.0
+                        if ar1 > 0 and rate_pct >= ar1: score = w1
+                        elif ar2 > 0 and rate_pct >= ar2: score = w2
+                        elif ar3 > 0 and rate_pct >= ar3: score = w3
+                        else: score = 0.0
+                scores.append(score)
+                continue
             else:
                 if dtype == 'SAITO式':
                     t_val = team_saito_denoms.get(my_org, float(row[name_col]) if name_col in row else 1.0)

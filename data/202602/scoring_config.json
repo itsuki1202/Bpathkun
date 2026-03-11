@@ -1,8 +1,8 @@
 {
   "items": [
     {
-      "id": "item_PI店頭",
-      "name": "PI店頭",
+      "id": "item_店頭PI",
+      "name": "店頭PI",
       "weight": 60.0,
       "weights": {
         "w1": 60.0,
@@ -70,7 +70,7 @@
       "evaluation_type": "individual_achievement",
       "denominator_type": "SAITO式",
       "targets": {
-        "acquisition_rate_1": 0.01,
+        "acquisition_rate_1": NaN,
         "acquisition_rate_2": NaN,
         "acquisition_rate_3": NaN,
         "achievement_rate_1": NaN,
@@ -82,9 +82,9 @@
         "team_salvage": false
       },
       "shop_targets": {
-        "ドコモショップ倉敷店": 0,
-        "ドコモショップ児島店": 0,
-        "ドコモショップ水島店": 0
+        "ドコモショップ倉敷店": 1,
+        "ドコモショップ児島店": 1,
+        "ドコモショップ水島店": 1
       }
     },
     {
@@ -436,8 +436,8 @@
       }
     },
     {
-      "id": "item_GoogleOneNetflix・YouTube Premium",
-      "name": "GoogleOneNetflix・YouTube Premium",
+      "id": "item_GoogleOne\nNetflix・YouTube Premium",
+      "name": "GoogleOne\nNetflix・YouTube Premium",
       "weight": 20.0,
       "weights": {
         "w1": 20.0,
@@ -532,64 +532,6 @@
         "w3": 0
       },
       "evaluation_type": "relative",
-      "denominator_type": "SAITO式",
-      "targets": {
-        "acquisition_rate_1": NaN,
-        "acquisition_rate_2": NaN,
-        "acquisition_rate_3": NaN,
-        "achievement_rate_1": NaN,
-        "achievement_rate_2": NaN,
-        "achievement_rate_3": NaN
-      },
-      "flags": {
-        "individual_salvage": false,
-        "team_salvage": false
-      },
-      "shop_targets": {
-        "ドコモショップ倉敷店": 0,
-        "ドコモショップ児島店": 0,
-        "ドコモショップ水島店": 0
-      }
-    },
-    {
-      "id": "item_None",
-      "name": null,
-      "weight": NaN,
-      "weights": {
-        "w1": NaN,
-        "w2": NaN,
-        "w3": 0
-      },
-      "evaluation_type": "shop_achievement",
-      "denominator_type": "SAITO式",
-      "targets": {
-        "acquisition_rate_1": NaN,
-        "acquisition_rate_2": NaN,
-        "acquisition_rate_3": NaN,
-        "achievement_rate_1": NaN,
-        "achievement_rate_2": NaN,
-        "achievement_rate_3": NaN
-      },
-      "flags": {
-        "individual_salvage": false,
-        "team_salvage": false
-      },
-      "shop_targets": {
-        "ドコモショップ倉敷店": 0,
-        "ドコモショップ児島店": 0,
-        "ドコモショップ水島店": 0
-      }
-    },
-    {
-      "id": "item_None",
-      "name": null,
-      "weight": NaN,
-      "weights": {
-        "w1": NaN,
-        "w2": NaN,
-        "w3": 0
-      },
-      "evaluation_type": "shop_achievement",
       "denominator_type": "SAITO式",
       "targets": {
         "acquisition_rate_1": NaN,

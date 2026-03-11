@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import io
@@ -74,7 +74,7 @@ def admin_page(config, user_master, target_month=None):
     else:
         st.header("管理者設定")
     
-    tab1, tab2, tab3 = st.tabs(["メンバー管理", "評価項目設定", "成績データ管理"])
+    tab1, tab2, tab3, tab4 = st.tabs(["メンバー管理", "評価項目設定", "成績データ管理", "🔍 計算チェック"])
     
     # --- Tab 1: Member Management ---
     with tab1:
@@ -606,6 +606,353 @@ def admin_page(config, user_master, target_month=None):
                     os.makedirs('data', exist_ok=True)
                     df_terms.to_csv('data/daily_terminals.csv', index=False, encoding='utf-8-sig')
                     st.success("保存しました")
+
+
+    # ========================================================
+    # --- Tab 4: 計算チェック ---
+    # ========================================================
+    with tab4:
+        st.header("🔍 計算チェック")
+        st.markdown("設定・データ・計算の整合性を確認します。")
+
+        # ────────────────────────────────────────────────────
+        # セクション①: 設定整合性チェック
+        # ────────────────────────────────────────────────────
+        with st.expander("① 設定整合性チェック", expanded=True):
+            items_chk = config.get('items', [])
+            if not items_chk:
+                st.info("評価項目が未設定です。Tab2「評価項目設定」から設定してください。")
+            else:
+                # 設定データの空行（nameやweightがNone）をスキップ
+                valid_items_chk = [
+                    it for it in items_chk
+                    if it.get('name') and pd.notna(it.get('weight'))
+                ]
+                # 配点合計 --- weightがNone/nanの場合に対応する
+                total_weight = sum(
+                    float(it.get('weight') or 0)
+                    for it in valid_items_chk
+                )
+                col_w1, col_w2 = st.columns([1, 2])
+                with col_w1:
+                    if abs(total_weight - 100) < 0.01:
+                        st.success(f"✅ 配点合計: **{total_weight:.1f}点**（正常）")
+                    else:
+                        st.warning(f"⚠️ 配点合計: **{total_weight:.1f}点**（100点から外れています）")
+
+                # --- 評価軸内訳 ---
+                eval_type_label = {
+                    "relative": "相対評価", "absolute": "絶対評価",
+                    "relative_absolute": "相対絶対", "shop_achievement": "店舗達成率",
+                    "individual_achievement": "個人達成",
+                    "team_absolute": "チーム絶対", "team_relative": "チーム相対"
+                }
+                axis_summary = {}
+                for it in valid_items_chk:
+                    et = it.get('evaluation_type', 'relative')
+                    lbl = eval_type_label.get(et, et)
+                    if lbl not in axis_summary:
+                        axis_summary[lbl] = {"件数": 0, "配点合計": 0.0, "項目名": []}
+                    axis_summary[lbl]["件数"] += 1
+                    axis_summary[lbl]["配点合計"] += float(it.get('weight') or 0)
+                    axis_summary[lbl]["項目名"].append(it.get('name') or '')
+                axis_rows = [
+                    {"評価軸": lbl, "件数": v["件数"], "配点合計": v["配点合計"], "対象項目": "、".join([str(x) for x in v["項目名"] if x is not None and x != ''])}
+                    for lbl, v in axis_summary.items()
+                ]
+                st.markdown("**評価軸内訳**")
+                st.dataframe(pd.DataFrame(axis_rows), use_container_width=True, hide_index=True)
+
+                # --- 目標値空欄チェック ---
+                target_required_types = ['shop_achievement', 'individual_achievement']
+                missing_targets = []
+                for it in valid_items_chk:
+                    if it.get('evaluation_type') in target_required_types:
+                        shop_targets = it.get('shop_targets', {})
+                        if not shop_targets or all(float(v) == 0 for v in shop_targets.values()):
+                            missing_targets.append(it.get('name') or '')
+                if missing_targets:
+                    st.error(f"❌ 店舗目標が未設定の項目（店舗達成率/個人達成 なのに目標=0）: **{'、'.join([x for x in missing_targets if x])}**")
+                else:
+                    st.success("✅ 店舗目標の設定：問題なし")
+
+                # --- SAITO式分母データのチェック ---
+                uses_saito = any(it.get('denominator_type', 'SAITO式') == 'SAITO式' for it in valid_items_chk)
+                if uses_saito:
+                    has_orders = os.path.exists('data/daily_orders.csv')
+                    has_terms = os.path.exists('data/daily_terminals.csv')
+                    if not has_orders and not has_terms:
+                        st.warning("⚠️ SAITO式分母を使う項目がありますが、日別実績データ（オーダー数・端末販売数）が未登録です。Tab3から登録してください。")
+                    elif not has_orders:
+                        st.warning("⚠️ 日別オーダー数が未登録です。")
+                    elif not has_terms:
+                        st.warning("⚠️ 日別端末販売数が未登録です。")
+                    else:
+                        st.success("✅ 日別実績データ（SAITO式分母用）：登録済み")
+
+        # ────────────────────────────────────────────────────
+        # セクション②: データ引用確認
+        # ────────────────────────────────────────────────────
+        with st.expander("② データ引用確認（設定項目名 vs 成績CSV列名）", expanded=False):
+            perf_csv_path = 'data/current_performance.csv'
+            if not os.path.exists(perf_csv_path):
+                st.info("成績データが未登録です。Tab3からアップロードしてください。")
+            elif not items_chk:
+                st.info("評価項目が未設定です。")
+            else:
+                df_perf_chk = pd.read_csv(perf_csv_path)
+                from utils.calculation import normalize_col_name as _ncn_chk
+                norm_to_raw_chk = {_ncn_chk(c): c for c in df_perf_chk.columns}
+
+                mapping_rows = []
+                for it in items_chk:
+                    iname = it.get('name', '')
+                    norm_iname = _ncn_chk(iname)
+                    matched_col = norm_to_raw_chk.get(norm_iname)
+                    status = "✅ 一致" if matched_col else "❌ CSVに列が見つからない"
+                    mapping_rows.append({
+                        "設定項目名": iname,
+                        "CSVの対応列名": matched_col if matched_col else "（未一致）",
+                        "状態": status
+                    })
+                df_mapping = pd.DataFrame(mapping_rows)
+                st.dataframe(df_mapping, use_container_width=True, hide_index=True)
+
+                unmapped = df_mapping[df_mapping["状態"].str.startswith("❌")]
+                if not unmapped.empty:
+                    st.error(f"❌ {len(unmapped)}件の項目がCSVの列と一致しません。項目名・CSV列名を確認してください。")
+                else:
+                    st.success("✅ 全ての設定項目がCSVの列と一致しています。")
+
+        # ────────────────────────────────────────────────────
+        # セクション③: メンバー一致チェック
+        # ────────────────────────────────────────────────────
+        with st.expander("③ メンバー一致チェック（名簿 vs 成績CSV・リーダー/店長確認）", expanded=True):
+            users_chk = user_master.get('users', [])
+            if not users_chk:
+                st.info("メンバー名簿が未設定です。Tab1から設定してください。")
+            elif not os.path.exists('data/current_performance.csv'):
+                st.info("成績データが未登録です。Tab3からアップロードしてください。")
+            else:
+                df_perf_m = pd.read_csv('data/current_performance.csv')
+                name_col_m = next((c for c in ['スタッフ名', '氏名', 'Name'] if c in df_perf_m.columns), None)
+
+                # --- 名前の正規化突合 ---
+                master_norm_map = {normalize_text(u['name']): u['name'] for u in users_chk}
+                master_norms = set(master_norm_map.keys())
+
+                if name_col_m:
+                    csv_names_raw = df_perf_m[name_col_m].dropna().unique().tolist()
+                    csv_norm_map = {normalize_text(n): n for n in csv_names_raw}
+                    csv_norms = set(csv_norm_map.keys())
+
+                    # 名簿にいてCSVにいない
+                    only_master = master_norms - csv_norms
+                    # CSVにいて名簿にいない
+                    only_csv = csv_norms - master_norms
+                    # 一致
+                    matched = master_norms & csv_norms
+
+                    col_m1, col_m2, col_m3 = st.columns(3)
+                    with col_m1:
+                        if matched:
+                            st.success(f"✅ 一致: {len(matched)}名")
+                        else:
+                            st.warning("一致するメンバーなし")
+                    with col_m2:
+                        if only_master:
+                            st.warning(f"⚠️ 名簿のみ（CSVに未収録）: {len(only_master)}名")
+                        else:
+                            st.success("✅ 名簿 → CSV: 全員収録")
+                    with col_m3:
+                        if only_csv:
+                            st.warning(f"⚠️ CSVのみ（名簿に未登録）: {len(only_csv)}名")
+                        else:
+                            st.success("✅ CSV → 名簿: 全員登録済み")
+
+                    # 詳細テーブル
+                    detail_rows = []
+                    for nm, raw in master_norm_map.items():
+                        csv_raw = csv_norm_map.get(nm)
+                        status_m = "✅ 一致" if csv_raw else "⚠️ CSVに未収録"
+                        detail_rows.append({"名簿の名前": raw, "正規化後": nm, "CSVの名前": csv_raw or "―", "状態": status_m})
+                    for nm, raw in csv_norm_map.items():
+                        if nm not in master_norm_map:
+                            detail_rows.append({"名簿の名前": "―", "正規化後": nm, "CSVの名前": raw, "状態": "❌ 名簿に未登録"})
+                    st.markdown("**メンバー突合詳細**")
+                    df_detail = pd.DataFrame(detail_rows).sort_values("状態")
+                    st.dataframe(df_detail, use_container_width=True, hide_index=True)
+
+                st.markdown("---")
+
+                # --- チームリーダー確認 ---
+                st.markdown("**チームリーダー確認（名簿順1位が表示画面のリーダーになります）**")
+                team_leader_rows = []
+                seen_teams = {}
+                for u in users_chk:
+                    team_key = normalize_text(u.get('team', ''))
+                    if team_key and team_key not in seen_teams:
+                        seen_teams[team_key] = u.get('name', '')
+                for team_raw, leader_name in seen_teams.items():
+                    # チームに所属するメンバー数も取得
+                    members = [u['name'] for u in users_chk if normalize_text(u.get('team', '')) == team_raw]
+                    # 対応する店舗を確認
+                    shop_name = next((u.get('shop', '') for u in users_chk if normalize_text(u.get('team', '')) == team_raw), '')
+                    team_leader_rows.append({
+                        "店舗": shop_name,
+                        "チーム(正規化後)": team_raw,
+                        "リーダー（名前）": leader_name,
+                        "チーム人数": len(members),
+                        "メンバー一覧": "、".join(members)
+                    })
+                if team_leader_rows:
+                    st.dataframe(pd.DataFrame(team_leader_rows), use_container_width=True, hide_index=True)
+                else:
+                    st.info("チーム情報がありません。")
+
+                st.markdown("---")
+
+                # --- 店長確認 ---
+                st.markdown("**店長確認（ランキング画面に表示される店長名）**")
+                shop_managers_chk = user_master.get('shop_managers', {})
+                all_shops_chk = sorted(list(set([u.get('shop', '') for u in users_chk if u.get('shop')])))
+                shop_mgr_rows = []
+                for s in all_shops_chk:
+                    mgr = shop_managers_chk.get(normalize_text(s), shop_managers_chk.get(s, ''))
+                    status_mgr = "✅ 設定済み" if mgr else "⚠️ 未設定"
+                    shop_mgr_rows.append({"店舗名": s, "設定されている店長名": mgr or "（未設定）", "状態": status_mgr})
+                if shop_mgr_rows:
+                    st.dataframe(pd.DataFrame(shop_mgr_rows), use_container_width=True, hide_index=True)
+                    unset_shops = [r["店舗名"] for r in shop_mgr_rows if r["状態"].startswith("⚠️")]
+                    if unset_shops:
+                        st.warning(f"⚠️ 以下の店舗の店長が未設定です: **{'、'.join(unset_shops)}**　→ Tab1「店舗別設定」で入力してください。")
+                    else:
+                        st.success("✅ 全店舗に店長が設定されています。")
+                else:
+                    st.info("店舗情報がありません。")
+
+        # ────────────────────────────────────────────────────
+        # セクション④: 計算詳細監査
+        # ────────────────────────────────────────────────────
+        with st.expander("④ 計算詳細監査（スコア計算の根拠を確認）", expanded=False):
+            if not os.path.exists('data/current_performance.csv'):
+                st.info("成績データが未登録です。Tab3からアップロードしてください。")
+            elif not items_chk:
+                st.info("評価項目が未設定です。")
+            else:
+                from utils.calculation import get_calculation_audit_df, calculate_scores, normalize_col_name as _ncn_audit
+                df_audit_raw = pd.read_csv('data/current_performance.csv')
+                df_denom_audit = get_denominator_df(df_audit_raw)
+
+                # 実際に使われているスコアを calculate_scores() で取得
+                # get_calculation_audit_df は絶対評価系のみ対応。
+                # 相対評価・相対絶対のスコアは calculate_scores の結果で上書きする。
+                scored_df_audit = calculate_scores(df_audit_raw, config, df_denom_audit)
+
+                df_audit = get_calculation_audit_df(df_audit_raw, config, df_denom_audit)
+
+                # calculate_scores の実スコアを監査テーブルにマージ
+                if not df_audit.empty and not scored_df_audit.empty:
+                    name_col_audit = next((c for c in ['スタッフ名', '氏名', 'Name'] if c in scored_df_audit.columns), None)
+                    if name_col_audit:
+                        # {(スタッフ名, 項目名): 実スコア} の辞書を構築
+                        real_score_map = {}
+                        for _item in config.get('items', []):
+                            _iname = _item.get('name', '')
+                            if not _iname: continue
+                            _norm_col = f"{_ncn_audit(_iname)}_score"
+                            if _norm_col not in scored_df_audit.columns: continue
+                            for _, _srow in scored_df_audit.iterrows():
+                                _sn = str(_srow[name_col_audit]).strip()
+                                real_score_map[(_sn, _iname)] = float(_srow[_norm_col])
+
+                        # df_audit の最終スコア列を実スコアで上書き
+                        def _get_real_score(row):
+                            key = (str(row['対象者']).strip(), str(row['項目名']).strip())
+                            return real_score_map.get(key, row['最終スコア'])
+                        df_audit['最終スコア'] = df_audit.apply(_get_real_score, axis=1)
+
+                        # 実際の Total_Score も展示用に付与
+                        if 'Total_Score' in scored_df_audit.columns:
+                            _total_map = scored_df_audit.set_index(name_col_audit)['Total_Score'].to_dict()
+                            df_audit['実合計スコア'] = df_audit['対象者'].map(
+                                lambda n: _total_map.get(str(n).strip(), None)
+                            )
+
+                if df_audit.empty:
+                    st.info("監査データが生成できません。データと設定を確認してください。")
+                else:
+                    # --- 配点合計比較 ---
+                    # 配点合計（有効な項目のみ）― nanを防ぐ
+                    valid_items_for_audit = [it for it in items_chk if it.get('name') and pd.notna(it.get('weight'))]
+                    max_possible = sum(float(it.get('weight') or 0) for it in valid_items_for_audit)
+                    if '最終スコア' in df_audit.columns and '対象者' in df_audit.columns:
+                        person_totals = df_audit.groupby('対象者')['最終スコア'].sum().reset_index()
+                        person_totals.columns = ['スタッフ名', '計算合計スコア']
+                        person_totals['設定配点合計(最大値)'] = max_possible
+                        person_totals['過超フラグ'] = person_totals['計算合計スコア'] > max_possible + 0.01
+                        over_count = person_totals['過超フラグ'].sum()
+                        if over_count > 0:
+                            st.error(f"❌ {over_count}名のスコアが設定配点合計（{max_possible:.1f}点）を超過しています。")
+                        else:
+                            st.success(f"✅ 全スタッフのスコアが設定配点合計（{max_possible:.1f}点）以内に収まっています。")
+
+                    st.markdown("---")
+
+                    # --- フィルタパネル ---
+                    filter_col1, filter_col2, filter_col3 = st.columns(3)
+                    with filter_col1:
+                        all_staff = ["（全員）"] + sorted(df_audit['対象者'].unique().tolist()) if '対象者' in df_audit.columns else ["（全員）"]
+                        sel_staff = st.selectbox("スタッフで絞り込み", all_staff, key="audit_staff_filter")
+                    with filter_col2:
+                        all_items_audit = ["（全項目）"] + sorted(df_audit['項目名'].unique().tolist()) if '項目名' in df_audit.columns else ["（全項目）"]
+                        sel_item = st.selectbox("項目で絞り込み", all_items_audit, key="audit_item_filter")
+                    with filter_col3:
+                        show_zero_only = st.checkbox("0点の項目のみ表示", key="audit_zero_filter")
+
+                    # --- フィルタ適用 ---
+                    df_audit_disp = df_audit.copy()
+                    if sel_staff != "（全員）":
+                        df_audit_disp = df_audit_disp[df_audit_disp['対象者'] == sel_staff]
+                    if sel_item != "（全項目）":
+                        df_audit_disp = df_audit_disp[df_audit_disp['項目名'] == sel_item]
+                    if show_zero_only:
+                        df_audit_disp = df_audit_disp[df_audit_disp['最終スコア'] == 0]
+
+                    st.markdown(f"**計算過程テーブル**（{len(df_audit_disp)}件表示）")
+                    st.dataframe(
+                        df_audit_disp,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "達成率(%)": st.column_config.NumberColumn("達成率(%)", format="%.1f"),
+                            "実績値": st.column_config.NumberColumn("実績値", format="%.2f"),
+                            "計算分母": st.column_config.NumberColumn("計算分母", format="%.3f"),
+                            "計算ターゲット": st.column_config.NumberColumn("計算ターゲット", format="%.2f"),
+                            "最終スコア": st.column_config.NumberColumn("最終スコア", format="%.2f"),
+                        }
+                    )
+
+                    # --- スタッフ別スコア合計サマリ ---
+                    if '対象者' in df_audit.columns and '最終スコア' in df_audit.columns:
+                        st.markdown("---")
+                        st.markdown("**スタッフ別スコア合計サマリ**")
+                        summary_df = df_audit.groupby('対象者')['最終スコア'].sum().reset_index()
+                        summary_df.columns = ['スタッフ名', '計算合計スコア']
+                        summary_df['設定配点合計'] = max_possible
+                        summary_df['スコア率(%)'] = (summary_df['計算合計スコア'] / max_possible * 100).round(1)
+                        summary_df = summary_df.sort_values('計算合計スコア', ascending=False).reset_index(drop=True)
+                        st.dataframe(
+                            summary_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "計算合計スコア": st.column_config.NumberColumn("計算合計スコア", format="%.2f"),
+                                "スコア率(%)": st.column_config.ProgressColumn(
+                                    "スコア率(%)", min_value=0, max_value=100, format="%.1f%%"
+                                )
+                            }
+                        )
 
 
 
@@ -2240,6 +2587,93 @@ def annual_awards_page(df):
 
 
 
+def _build_excel_bytes_for_download(dl_df, dl_config, dl_target_month):
+    """個人・チーム・店舗テーブルを1シートに縦積みしてバイト列を返す（トップレベル関数）"""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    if dl_df is None or dl_df.empty or not dl_config or not dl_config.get('items'):
+        return None, "データまたは設定が不足しています"
+    try:
+        from utils.calculation import normalize_col_name as _ncn_dl
+        dl_denom = get_denominator_df(dl_df)
+        scored = calculate_scores(dl_df, dl_config, dl_denom)
+        items_dl = dl_config.get('items', [])
+        item_names_dl = [it.get('name', '') for it in items_dl if it.get('name')]
+
+        name_col_dl = 'スタッフ名' if 'スタッフ名' in scored.columns else 'Name'
+        shop_col_dl = next((c for c in ['店舗名', '店舗'] if c in scored.columns), None)
+        team_col_dl = next((c for c in ['チーム名', 'チーム'] if c in scored.columns), None)
+
+        score_cols = [f"{_ncn_dl(n)}_score" for n in item_names_dl]
+        score_cols_exist = [c for c in score_cols if c in scored.columns]
+        rename_map = {f"{_ncn_dl(n)}_score": n for n in item_names_dl}
+
+        # --- 個人テーブル（名簿順） ---
+        ind_base_cols = [c for c in [name_col_dl, shop_col_dl, team_col_dl] if c]
+        ind_df = scored[ind_base_cols + ['Rank', 'Total_Score'] + score_cols_exist].copy()
+        ind_df.rename(columns={'Rank': '順位', 'Total_Score': '合計スコア'}, inplace=True)
+        ind_df.rename(columns=rename_map, inplace=True)
+        um_dl = load_user_master(month=dl_target_month)
+        ind_df = apply_robust_sorting(ind_df, um_dl, name_col_dl)
+        for c in ind_df.select_dtypes('float').columns:
+            ind_df[c] = ind_df[c].round(1)
+
+        # --- チームテーブル ---
+        team_scored = aggregate_team_scores(scored, dl_df, dl_config)
+        team_base = [c for c in ['チーム名', '店舗名'] if c in team_scored.columns]
+        team_score_cols_e = [c for c in score_cols if c in team_scored.columns]
+        team_df = team_scored[team_base + ['Rank', 'Total_Score'] + team_score_cols_e].copy()
+        team_df.rename(columns={'Rank': '順位', 'Total_Score': '合計スコア'}, inplace=True)
+        team_df.rename(columns=rename_map, inplace=True)
+        team_df = team_df.sort_values('順位').reset_index(drop=True)
+        for c in team_df.select_dtypes('float').columns:
+            team_df[c] = team_df[c].round(1)
+
+        # --- 店舗テーブル ---
+        shop_scored = aggregate_shop_scores(scored, dl_df, dl_config)
+        shop_base = [c for c in ['店舗名'] if c in shop_scored.columns]
+        shop_score_cols_e = [c for c in score_cols if c in shop_scored.columns]
+        shop_df = shop_scored[shop_base + ['Rank', 'Total_Score'] + shop_score_cols_e].copy()
+        shop_df.rename(columns={'Rank': '順位', 'Total_Score': '合計スコア'}, inplace=True)
+        shop_df.rename(columns=rename_map, inplace=True)
+        shop_df = shop_df.sort_values('順位').reset_index(drop=True)
+        for c in shop_df.select_dtypes('float').columns:
+            shop_df[c] = shop_df[c].round(1)
+
+        # --- openpyxlで1シートに縦積み書き込み ---
+        buf_dl = io.BytesIO()
+        wb_dl = openpyxl.Workbook()
+        ws_dl = wb_dl.active
+        ws_dl.title = '成績一覧'
+
+        def _write_dl_section(ws, label, df):
+            label_row = [label] + [''] * (len(df.columns) - 1)
+            ws.append(label_row)
+            ws.cell(ws.max_row, 1).font = Font(bold=True, size=12)
+            ws.append(list(df.columns))
+            for c_idx in range(1, len(df.columns) + 1):
+                ws.cell(ws.max_row, c_idx).font = Font(bold=True)
+            for _, row_data in df.iterrows():
+                ws.append([
+                    None if (isinstance(v, float) and pd.isna(v)) else v
+                    for v in row_data.tolist()
+                ])
+            ws.append([])
+            ws.append([])
+
+        _write_dl_section(ws_dl, '【個人】', ind_df)
+        _write_dl_section(ws_dl, '【チーム】', team_df)
+        _write_dl_section(ws_dl, '【店舗】', shop_df)
+
+        wb_dl.save(buf_dl)
+        return buf_dl.getvalue(), None
+
+    except Exception as e:
+        import traceback
+        return None, f"{e}\n{traceback.format_exc()}"
+
+
 def main():
     st.set_page_config(page_title="ブライトパスくん", layout="wide")
     st.title("ブライトパスくん")
@@ -2569,7 +3003,6 @@ def main():
         if st.sidebar.button("配点シミュレーション", use_container_width=True, type="primary" if st.session_state['current_mode'] == "配点シミュレーション" else "secondary"):
             st.session_state['current_mode'] = "配点シミュレーション"
             st.rerun()
-
         if st.sidebar.button("年間表彰", use_container_width=True, type="primary" if st.session_state['current_mode'] == "年間表彰" else "secondary"):
             st.session_state['current_mode'] = "年間表彰"
             st.rerun()
@@ -2578,6 +3011,42 @@ def main():
         if st.sidebar.button("設定", use_container_width=True, type="primary" if st.session_state['current_mode'] == "設定 (Admin)" else "secondary"):
             st.session_state['current_mode'] = "設定 (Admin)"
             st.rerun()
+
+    # --- サイドバー最下部: 一括Excelダウンロード ---
+    st.sidebar.markdown("---")
+
+    # データが存在する場合のみダウンロードボタンを表示
+    _dl_perf_path = (
+        os.path.join(DATA_DIR, selected_folder, "performance_data.csv")
+        if 'selected_folder' in dir() and selected_folder
+        else os.path.join(DATA_DIR, "current_performance.csv")
+    )
+    if os.path.exists(_dl_perf_path):
+        try:
+            _dl_df = pd.read_csv(_dl_perf_path)
+            _dl_config = load_scoring_config(month=selected_folder if selected_folder else None)
+            _ym_label = (
+                f"{target_month[:4]}年{int(target_month[4:])}月"
+                if target_month else "最新"
+            )
+            _fname = (
+                f"ブライトパスくん_成績一覧_{target_month}.xlsx"
+                if target_month else f"ブライトパスくん_成績一覧_最新.xlsx"
+            )
+            _excel_bytes, _dl_err = _build_excel_bytes_for_download(_dl_df, _dl_config, target_month)
+            if _dl_err:
+                st.sidebar.error(f'Excelエラー: {_dl_err[:300]}')
+            elif _excel_bytes:
+                st.sidebar.download_button(
+                    label=f"📥 {_ym_label}データを一括DL",
+                    data=_excel_bytes,
+                    file_name=_fname,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="sidebar_bulk_download"
+                )
+        except Exception as _ex:
+            st.sidebar.error(f"DLエラー: {_ex}")
             
     mode = st.session_state['current_mode']
 
