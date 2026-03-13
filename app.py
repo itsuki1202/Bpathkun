@@ -1,4 +1,9 @@
 import streamlit as st
+from PIL import Image as _PIL_Image
+# ページ設定（faviconとタイトル）
+_favicon = _PIL_Image.open("favicon.png")
+st.set_page_config(page_title="ブライトパスくん", page_icon=_favicon, layout="wide")
+
 import pandas as pd
 import numpy as np
 import io
