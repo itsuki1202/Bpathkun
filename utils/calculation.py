@@ -438,8 +438,8 @@ def calculate_organization_scores(df_original, config, org_level='team', scored_
                     if rate_pct >= ar1: score = w1
                     elif ar2 > 0 and rate_pct >= ar2: score = w2
                     elif ar3 > 0 and rate_pct >= ar3: score = w3
-                elif achievement_rate >= 1.0:
-                    score = weight
+                else:
+                    score = min(achievement_rate * weight, weight)
             
             elif eval_type == 'relative_absolute':
                 # 本来は全組織のリストが必要だが、ここでは簡易化（必要なら全体計算を別途回す）
