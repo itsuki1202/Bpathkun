@@ -152,3 +152,129 @@ def load_login_log() -> pd.DataFrame:
         return df.sort_values("timestamp", ascending=False).reset_index(drop=True)
     except Exception:
         return pd.DataFrame(columns=["timestamp", "username", "display_name", "status", "message"])
+
+
+def generate_user_template_excel() -> bytes:
+    """
+    ユーザー一括登録用のExcelテンプレートをバイト列で返す。
+    列: ユーザーID / 表示名 / 初期パスワード / ロール
+    """
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "ユーザー一括登録"
+
+    # ヘッダー定義
+    headers = ["ユーザーID", "表示名", "初期パスワード", "ロール"]
+    col_widths = [20, 20, 20, 12]
+    notes = [
+        "英数字のみ。例: tanaka01",
+        "画面に表示される名前。例: 田中 太郎",
+        "初期パスワード（平文で記入）",
+        "viewer または admin"
+    ]
+
+    # スタイル定義
+    header_fill = PatternFill(start_color="2196F3", end_color="2196F3", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    note_fill   = PatternFill(start_color="E3F2FD", end_color="E3F2FD", fill_type="solid")
+    note_font   = Font(italic=True, color="546E7A", size=9)
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin")
+    )
+    center = Alignment(horizontal="center", vertical="center")
+
+    # 1行目: ヘッダー
+    for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_fill and header_font
+        cell.fill = header_fill
+        cell.alignment = center
+        cell.border = thin_border
+        ws.column_dimensions[cell.column_letter].width = width
+
+    # 2行目: 記入例（注釈）
+    for col_idx, note in enumerate(notes, start=1):
+        cell = ws.cell(row=2, column=col_idx, value=note)
+        cell.fill = note_fill
+        cell.font = note_font
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        cell.border = thin_border
+
+    # 3行目以降: サンプルデータ
+    samples = [
+        ("tanaka01", "田中 太郎", "initial_pass_01", "viewer"),
+        ("yamada02", "山田 花子", "initial_pass_02", "viewer"),
+    ]
+    for row_idx, sample in enumerate(samples, start=3):
+        for col_idx, val in enumerate(sample, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            cell.border = thin_border
+
+    # 行の高さ
+    ws.row_dimensions[1].height = 22
+    ws.row_dimensions[2].height = 18
+
+    # バイト列として返す
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def bulk_add_users(config: dict, df: pd.DataFrame) -> tuple:
+    """
+    DataFrameからユーザーを一括追加する。
+    必須列: ユーザーID / 表示名 / 初期パスワード / ロール
+    Returns: (成功数, スキップ数, メッセージリスト)
+    """
+    usernames = config.get("credentials", {}).get("usernames", {})
+    success_count  = 0
+    skip_count     = 0
+    messages       = []
+    valid_roles    = {"viewer", "admin"}
+
+    for _, row in df.iterrows():
+        uid  = str(row.get("ユーザーID", "")).strip()
+        name = str(row.get("表示名", "")).strip()
+        pw   = str(row.get("初期パスワード", "")).strip()
+        role = str(row.get("ロール", "viewer")).strip().lower()
+
+        # 空行スキップ
+        if not uid or uid == "nan" or not pw or pw == "nan":
+            skip_count += 1
+            messages.append(f"  ⚠️ スキップ（空行）: UID='{uid}'")
+            continue
+
+        # 注釈行スキップ（英数字のみ ... など）
+        if uid in ("ユーザーID", "英数字のみ。例: tanaka01"):
+            skip_count += 1
+            continue
+
+        # 重複スキップ
+        if uid in usernames:
+            skip_count += 1
+            messages.append(f"  ⚠️ スキップ（重複）: UID='{uid}'")
+            continue
+
+        # ロール正規化
+        if role not in valid_roles:
+            role = "viewer"
+
+        usernames[uid] = {
+            "name":     name if name and name != "nan" else uid,
+            "email":    "",
+            "password": hash_password(pw),
+            "role":     role,
+        }
+        success_count += 1
+        messages.append(f"  ✅ 登録: UID='{uid}' / 名前='{name}' / ロール={role}")
+
+    config["credentials"]["usernames"] = usernames
+    save_auth_config(config)
+    return success_count, skip_count, messages
+
