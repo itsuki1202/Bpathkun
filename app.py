@@ -1093,19 +1093,37 @@ def admin_page(config, user_master, target_month=None):
 
                     st.markdown("---")
 
-                    # --- フィルタパネル ---
-                    filter_col1, filter_col2, filter_col3 = st.columns(3)
-                    with filter_col1:
-                        all_staff = ["（全員）"] + sorted(df_audit['対象者'].unique().tolist()) if '対象者' in df_audit.columns else ["（全員）"]
-                        sel_staff = st.selectbox("スタッフで絞り込み", all_staff, key="audit_staff_filter")
-                    with filter_col2:
+                    # --- フィルタパネル（店舗→チーム→スタッフの連動フィルタ） ---
+                    frow1_c1, frow1_c2, frow1_c3 = st.columns(3)
+                    with frow1_c1:
+                        # 店舗フィルタ
+                        _all_shops_audit = sorted([s for s in df_audit['店舗'].dropna().unique().tolist() if s and s != '-']) if '店舗' in df_audit.columns else []
+                        sel_shop = st.selectbox("店舗で絞り込み", ["（全店舗）"] + _all_shops_audit, key="audit_shop_filter")
+                    with frow1_c2:
+                        # チームフィルタ（店舗連動）
+                        _team_base = df_audit[df_audit['店舗'] == sel_shop] if (sel_shop != "（全店舗）" and '店舗' in df_audit.columns) else df_audit
+                        _all_teams_audit = sorted([t for t in _team_base['チーム'].dropna().unique().tolist() if t and t != '-']) if 'チーム' in df_audit.columns else []
+                        sel_team = st.selectbox("チームで絞り込み", ["（全チーム）"] + _all_teams_audit, key="audit_team_filter")
+                    with frow1_c3:
+                        # スタッフフィルタ（チーム連動）
+                        _staff_base = _team_base[_team_base['チーム'] == sel_team] if (sel_team != "（全チーム）" and 'チーム' in df_audit.columns) else _team_base
+                        _all_staff_audit = sorted(_staff_base['対象者'].dropna().unique().tolist()) if '対象者' in _staff_base.columns else []
+                        sel_staff = st.selectbox("スタッフで絞り込み", ["（全員）"] + _all_staff_audit, key="audit_staff_filter")
+
+                    frow2_c1, frow2_c2 = st.columns([2, 1])
+                    with frow2_c1:
                         all_items_audit = ["（全項目）"] + sorted(df_audit['項目名'].unique().tolist()) if '項目名' in df_audit.columns else ["（全項目）"]
                         sel_item = st.selectbox("項目で絞り込み", all_items_audit, key="audit_item_filter")
-                    with filter_col3:
+                    with frow2_c2:
+                        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
                         show_zero_only = st.checkbox("0点の項目のみ表示", key="audit_zero_filter")
 
                     # --- フィルタ適用 ---
                     df_audit_disp = df_audit.copy()
+                    if sel_shop != "（全店舗）" and '店舗' in df_audit_disp.columns:
+                        df_audit_disp = df_audit_disp[df_audit_disp['店舗'] == sel_shop]
+                    if sel_team != "（全チーム）" and 'チーム' in df_audit_disp.columns:
+                        df_audit_disp = df_audit_disp[df_audit_disp['チーム'] == sel_team]
                     if sel_staff != "（全員）":
                         df_audit_disp = df_audit_disp[df_audit_disp['対象者'] == sel_staff]
                     if sel_item != "（全項目）":
@@ -1127,15 +1145,25 @@ def admin_page(config, user_master, target_month=None):
                         }
                     )
 
-                    # --- スタッフ別スコア合計サマリ ---
+                    # --- スタッフ別スコア合計サマリ（店舗・チーム列含む） ---
                     if '対象者' in df_audit.columns and '最終スコア' in df_audit.columns:
                         st.markdown("---")
                         st.markdown("**スタッフ別スコア合計サマリ**")
-                        summary_df = df_audit.groupby('対象者')['最終スコア'].sum().reset_index()
-                        summary_df.columns = ['スタッフ名', '計算合計スコア']
+                        # グループキーに店舗・チームを追加
+                        _grp_cols = []
+                        if '店舗' in df_audit.columns:
+                            _grp_cols.append('店舗')
+                        if 'チーム' in df_audit.columns:
+                            _grp_cols.append('チーム')
+                        _grp_cols.append('対象者')
+                        summary_df = df_audit.groupby(_grp_cols, dropna=False)['最終スコア'].sum().reset_index()
+                        summary_df = summary_df.rename(columns={'対象者': 'スタッフ名', '最終スコア': '計算合計スコア'})
                         summary_df['設定配点合計'] = max_possible
                         summary_df['スコア率(%)'] = (summary_df['計算合計スコア'] / max_possible * 100).round(1)
-                        summary_df = summary_df.sort_values('計算合計スコア', ascending=False).reset_index(drop=True)
+                        # 店舗→チーム→スコア降順でソート
+                        _sort_cols = [c for c in ['店舗', 'チーム', '計算合計スコア'] if c in summary_df.columns]
+                        _sort_asc  = [True if c in ('店舗', 'チーム') else False for c in _sort_cols]
+                        summary_df = summary_df.sort_values(_sort_cols, ascending=_sort_asc).reset_index(drop=True)
                         st.dataframe(
                             summary_df,
                             use_container_width=True,
