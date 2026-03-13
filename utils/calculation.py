@@ -1,6 +1,18 @@
 import pandas as pd
 import numpy as np
 
+def _get_threshold(targets, n):
+    """achievement_rate_N または acquisition_rate_N からしきい値を安全に取得する。
+    NaN・フィールド名違い（achievement vs acquisition）どちらにも対応。"""
+    v = targets.get(f'achievement_rate_{n}')
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        v = targets.get(f'acquisition_rate_{n}', 0)
+    try:
+        r = float(v)
+        return 0.0 if pd.isna(r) else r
+    except:
+        return 0.0
+
 def calculate_relative_score(val, all_values, weight):
     """【相対評価（共通）】実績値のランキング。1位満点、以降等分割減点。実績0は0点。"""
     if pd.isna(val) or val <= 0: return 0
@@ -232,7 +244,7 @@ def calculate_scores(df, config, df_denom=None):
                 # ステップ判定 (しきい値が設定されている場合)
                 st_targets = item.get('targets', {})
                 st_weights = item.get('weights', {})
-                ar1 = float(st_targets.get('achievement_rate_1', 0) or 0)
+                ar1 = _get_threshold(st_targets, 1)
                 
                 if ar1 > 0:
                     # パーセンテージ判定
@@ -240,8 +252,8 @@ def calculate_scores(df, config, df_denom=None):
                     w1 = float(st_weights.get('w1', weight))
                     w2 = float(st_weights.get('w2', 0))
                     w3 = float(st_weights.get('w3', 0))
-                    ar2 = float(st_targets.get('achievement_rate_2', 0) or 0)
-                    ar3 = float(st_targets.get('achievement_rate_3', 0) or 0)
+                    ar2 = _get_threshold(st_targets, 2)
+                    ar3 = _get_threshold(st_targets, 3)
                     
                     if rate_pct >= ar1: score = w1
                     elif ar2 > 0 and rate_pct >= ar2: score = w2
@@ -425,15 +437,15 @@ def calculate_organization_scores(df_original, config, org_level='team', scored_
             if eval_type in ['absolute', 'shop_achievement', 'individual_achievement', 'team_absolute']:
                 st_targets = item.get('targets', {})
                 st_weights = item.get('weights', {})
-                ar1 = float(st_targets.get('achievement_rate_1', 0) or 0)
+                ar1 = _get_threshold(st_targets, 1)
                 
                 if ar1 > 0:
                     rate_pct = achievement_rate * 100.0
                     w1 = float(st_weights.get('w1', weight))
                     w2 = float(st_weights.get('w2', 0))
                     w3 = float(st_weights.get('w3', 0))
-                    ar2 = float(st_targets.get('achievement_rate_2', 0) or 0)
-                    ar3 = float(st_targets.get('achievement_rate_3', 0) or 0)
+                    ar2 = _get_threshold(st_targets, 2)
+                    ar3 = _get_threshold(st_targets, 3)
                     
                     if rate_pct >= ar1: score = w1
                     elif ar2 > 0 and rate_pct >= ar2: score = w2
@@ -542,12 +554,12 @@ def get_calculation_audit_df(df, config, df_denom):
         # 配点しきい値
         st_targets = item.get('targets', {})
         st_weights = item.get('weights', {})
-        ar1 = float(st_targets.get('achievement_rate_1', 0) or 0)
+        ar1 = _get_threshold(st_targets, 1)
         w1 = float(st_weights.get('w1', weight))
         w2 = float(st_weights.get('w2', 0))
         w3 = float(st_weights.get('w3', 0))
-        ar2 = float(st_targets.get('achievement_rate_2', 0) or 0)
-        ar3 = float(st_targets.get('achievement_rate_3', 0) or 0)
+        ar2 = _get_threshold(st_targets, 2)
+        ar3 = _get_threshold(st_targets, 3)
         
         for idx, row in df.iterrows():
             staff_name = str(row[name_col]).strip() if name_col in row else ""
