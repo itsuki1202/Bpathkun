@@ -1148,9 +1148,91 @@ def admin_page(config, user_master, target_month=None):
                             }
                         )
 
+        # ────────────────────────────────────────────────────
+        # セクション⑤: 整合性チェック（個人 vs 店舗スコア）
+        # ────────────────────────────────────────────────────
+        with st.expander("⑤ 整合性チェック（個人スコア平均 vs 店舗集計スコア）", expanded=False):
+            st.markdown("""
+            **目的**: 個人スコアの店舗平均と、店舗集計スコアを独立した視点で比較します。  
+            大きな乖離（差が配点の20%超）がある場合、計算ロジックの非対称バグを検出できます。
+            """)
+            if not os.path.exists('data/current_performance.csv'):
+                st.info("成績データが未登録です。Tab3からアップロードしてください。")
+            elif not items_chk:
+                st.info("評価項目が未設定です。")
+            else:
+                df_ic = pd.read_csv('data/current_performance.csv')
+                df_denom_ic = get_denominator_df(df_ic)
+                # 個人スコア計算
+                scored_ic = calculate_scores(df_ic, config, df_denom_ic)
+                # 店舗集計スコア計算
+                config_ic = dict(config)
+                config_ic['_user_master'] = user_master
+                shop_ic = aggregate_shop_scores(scored_ic, df_ic, config_ic)
+
+                from utils.calculation import normalize_col_name as _ncn_ic
+                shop_col_ic = '店舗名' if '店舗名' in scored_ic.columns else 'Shop'
+
+                check_rows = []
+                has_alert = False
+                for it in items_chk:
+                    iname = it.get('name', '')
+                    if not iname: continue
+                    w = float(it.get('weight', 0))
+                    if w <= 0: continue
+                    score_col_ic = f"{_ncn_ic(iname)}_score"
+                    if score_col_ic not in scored_ic.columns: continue
+                    if shop_ic is None or shop_ic.empty or score_col_ic not in shop_ic.columns: continue
+
+                    shops_list = shop_ic['店舗名'].tolist() if '店舗名' in shop_ic.columns else []
+                    for shop_name in shops_list:
+                        ind_scores = scored_ic[scored_ic[shop_col_ic] == shop_name][score_col_ic].dropna()
+                        if ind_scores.empty: continue
+                        ind_avg = ind_scores.mean()
+
+                        shop_row = shop_ic[shop_ic['店舗名'] == shop_name]
+                        if shop_row.empty: continue
+                        shop_score = float(shop_row.iloc[0][score_col_ic])
+
+                        diff = abs(ind_avg - shop_score)
+                        threshold = w * 0.20
+                        status = "⚠️ 要確認" if diff > threshold else "✅ 正常"
+                        if diff > threshold:
+                            has_alert = True
+
+                        check_rows.append({
+                            "店舗": shop_name,
+                            "項目名": iname,
+                            "個人平均スコア": round(ind_avg, 2),
+                            "店舗集計スコア": round(shop_score, 2),
+                            "差異": round(diff, 2),
+                            "配点": w,
+                            "閾値(配点20%)": round(threshold, 2),
+                            "判定": status,
+                        })
+
+                if check_rows:
+                    df_check = pd.DataFrame(check_rows)
+                    if has_alert:
+                        st.error("❌ 乖離が大きい項目が検出されました（差異 > 配点の20%）。ロジックを確認してください。")
+                    else:
+                        st.success("✅ 全項目の個人平均スコアと店舗集計スコアは整合しています。")
+                    st.dataframe(
+                        df_check,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "個人平均スコア": st.column_config.NumberColumn(format="%.2f"),
+                            "店舗集計スコア": st.column_config.NumberColumn(format="%.2f"),
+                            "差異": st.column_config.NumberColumn(format="%.2f"),
+                        }
+                    )
+                else:
+                    st.info("比較データが生成できません。")
 
 
 def get_denominator_df(df):
+
     """ Helper to calculate denominators on the fly processing local CSVs """
     import os
     if os.path.exists('data/daily_orders.csv'):
