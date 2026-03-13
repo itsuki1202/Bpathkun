@@ -247,8 +247,8 @@ def calculate_scores(df, config, df_denom=None):
                     elif ar2 > 0 and rate_pct >= ar2: score = w2
                     elif ar3 > 0 and rate_pct >= ar3: score = w3
                 else:
-                    # 線形評価
-                    score = min(achievement_rate * weight, weight)
+                    # Lv1しきい値未設定（設定漏れ）→ 0点
+                    score = 0
                 
                 # 救済措置 (Salvage)
                 if eval_type == 'team_absolute' and score == 0:
@@ -439,7 +439,8 @@ def calculate_organization_scores(df_original, config, org_level='team', scored_
                     elif ar2 > 0 and rate_pct >= ar2: score = w2
                     elif ar3 > 0 and rate_pct >= ar3: score = w3
                 else:
-                    score = min(achievement_rate * weight, weight)
+                    # Lv1しきい値未設定（設定漏れ）→ 0点
+                    score = 0
             
             elif eval_type == 'relative_absolute':
                 # 本来は全組織のリストが必要だが、ここでは簡易化（必要なら全体計算を別途回す）
