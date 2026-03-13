@@ -13,7 +13,8 @@ import plotly.graph_objects as go
 from master_data import PERFORMANCE_ITEMS, NEW_FORMAT_COLUMNS
 from utils.auth_manager import (
     load_auth_config, save_auth_config, hash_password,
-    add_user, delete_user, reset_password, log_login, load_login_log, get_all_users
+    add_user, delete_user, reset_password, log_login, load_login_log, get_all_users,
+    generate_user_template_excel, bulk_add_users
 )
 import streamlit_authenticator as stauth
 
@@ -86,8 +87,8 @@ def admin_page(config, user_master, target_month=None):
     """, unsafe_allow_html=True)
 
     tab1, tab2, tab3, tab4, tab_users, tab_log = st.tabs([
-        "メンバー管理", "評価項目設定", "成績データ管理", "🔍 計算チェック",
-        "👤 ユーザー管理", "📋 ログチェック"
+        "メンバー管理", "評価項目設定", "成績データ管理", "計算チェック",
+        "ユーザー管理", "ログチェック"
     ])
 
     # ============================================================
@@ -98,7 +99,7 @@ def admin_page(config, user_master, target_month=None):
         if st.session_state.get("user_role") != "admin":
             st.warning("⛔ この画面は管理者のみアクセスできます。")
         else:
-            st.subheader("👤 ユーザー管理")
+            st.subheader("ユーザー管理")
             _ac = load_auth_config()
 
             # --- 登録済みユーザー一覧 ---
@@ -114,18 +115,17 @@ def admin_page(config, user_master, target_month=None):
             st.markdown("---")
 
             # --- ユーザー追加 ---
-            st.markdown("#### ✅ ユーザーを追加")
+            st.markdown("#### ユーザーを追加")
             with st.form("add_user_form", clear_on_submit=True):
                 _col1, _col2 = st.columns(2)
                 with _col1:
                     _new_uid    = st.text_input("ユーザーID（ログイン用・英数字）", placeholder="例: tanaka01")
                     _new_name   = st.text_input("表示名", placeholder="例: 田中 太郎")
                 with _col2:
-                    _new_email  = st.text_input("メールアドレス（任意）", placeholder="例: tanaka@example.com")
                     _new_pw     = st.text_input("初期パスワード", type="password")
                     _new_role   = st.selectbox("ロール", ["viewer", "admin"])
                 if st.form_submit_button("追加する"):
-                    _ok, _msg = add_user(_ac, _new_uid, _new_name, _new_email, _new_pw, _new_role)
+                    _ok, _msg = add_user(_ac, _new_uid, _new_name, "", _new_pw, _new_role)
                     if _ok:
                         st.success(_msg)
                         st.rerun()
@@ -134,8 +134,63 @@ def admin_page(config, user_master, target_month=None):
 
             st.markdown("---")
 
+            # --- ユーザー一括登録 ---
+            st.markdown("#### 📥 ユーザー一括登録")
+
+            # フォーマットDLボタン
+            _tmpl_bytes = generate_user_template_excel()
+            st.download_button(
+                label="📄 登録用フォーマット(Excel)をダウンロード",
+                data=_tmpl_bytes,
+                file_name="user_register_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+            # アップローダー
+            _bulk_file = st.file_uploader(
+                "記入済みExcelをアップロード",
+                type=["xlsx"],
+                key="bulk_user_upload",
+                help="フォーマットに従って記入したExcelをアップロード（2行目の注釈行は自動スキップ）"
+            )
+
+            if _bulk_file is not None:
+                try:
+                    _bulk_df = pd.read_excel(_bulk_file, header=0)
+                    # 注釈行（2行目）を除外：ユーザーIDが「英数字のみ...」の行
+                    _bulk_df = _bulk_df[~_bulk_df["ユーザーID"].astype(str).str.startswith("英数字")]
+                    _bulk_df = _bulk_df.dropna(how="all")
+
+                    # プレビュー表示
+                    st.markdown("**📋 登録予定ユーザー（プレビュー）**")
+                    _preview_df = _bulk_df[["ユーザーID", "表示名", "ロール"]].copy()
+                    _preview_df["初期パスワード"] = "●●●●●●"  # パスワードはマスク表示
+                    st.dataframe(_preview_df, use_container_width=True, hide_index=True)
+                    st.caption(f"対象: {len(_bulk_df)} 行")
+
+                    # 一括登録ボタン
+                    if st.button("✅ 一括登録する", type="primary", use_container_width=True, key="bulk_register_btn"):
+                        _bulk_ac = load_auth_config()
+                        _ok_cnt, _skip_cnt, _msgs = bulk_add_users(_bulk_ac, _bulk_df)
+                        if _ok_cnt > 0:
+                            st.success(f"✅ {_ok_cnt} 件のユーザーを登録しました（スキップ: {_skip_cnt} 件）")
+                        else:
+                            st.warning(f"登録件数: 0 件（スキップ: {_skip_cnt} 件）")
+                        if _msgs:
+                            with st.expander("登録詳細"):
+                                st.text("\n".join(_msgs))
+                        if _ok_cnt > 0:
+                            st.rerun()
+                except Exception as _e:
+                    st.error(f"Excelの読み込みに失敗しました: {_e}")
+                    st.info("フォーマットDLボタンからダウンロードしたテンプレートを使用してください")
+
+            st.markdown("---")
+
             # --- パスワードリセット ---
-            st.markdown("#### 🔑 パスワードをリセット")
+            st.markdown("#### パスワードをリセット")
+
             with st.form("reset_pw_form", clear_on_submit=True):
                 _uid_list = [u["username"] for u in _users]
                 _reset_uid = st.selectbox("対象ユーザー", _uid_list) if _uid_list else None
@@ -151,7 +206,7 @@ def admin_page(config, user_master, target_month=None):
             st.markdown("---")
 
             # --- ユーザー削除 ---
-            st.markdown("#### 🗑️ ユーザーを削除")
+            st.markdown("#### ユーザーを削除")
             with st.form("del_user_form", clear_on_submit=True):
                 _del_uid_list = [u["username"] for u in _users if u["username"] != "admin"]
                 _del_uid = st.selectbox("削除対象ユーザー", _del_uid_list) if _del_uid_list else None
@@ -171,7 +226,7 @@ def admin_page(config, user_master, target_month=None):
         if st.session_state.get("user_role") != "admin":
             st.warning("⛔ この画面は管理者のみアクセスできます。")
         else:
-            st.subheader("📋 ログイン履歴")
+            st.subheader("ログイン履歴")
             _log_df = load_login_log()
             if _log_df.empty:
                 st.info("ログイン履歴はまだありません")
@@ -279,7 +334,7 @@ def admin_page(config, user_master, target_month=None):
         st.markdown("---")
         
         # --- Shop Manager Settings ---
-        st.subheader("🏢 店舗別設定")
+        st.subheader("店舗別設定")
         st.write("店舗ごとの基本情報を設定します。")
         
         users_list = user_master.get('users', [])
@@ -304,7 +359,7 @@ def admin_page(config, user_master, target_month=None):
 
         st.markdown("---")
         # Inline Editing for Members
-        st.subheader("👥 メンバー一覧")
+        st.subheader("メンバー一覧")
         st.write("▼ メンバーの追加・編集（並び順の1番目がチームリーダーとして表示されます）")
         df_users = pd.DataFrame(users_list)
         if df_users.empty:
@@ -644,7 +699,7 @@ def admin_page(config, user_master, target_month=None):
                  st.success("編集内容を保存しました！")
              
              st.markdown("---")
-             st.subheader("💡 成績分母の計算根拠 (デバッグ用)")
+             st.subheader("成績分母の計算根拠 (デバッグ用)")
              if st.checkbox("計算プロセスと内訳の詳細を表示する"):
                  try:
                      df_cur = pd.read_csv("data/current_performance.csv")
@@ -687,7 +742,7 @@ def admin_page(config, user_master, target_month=None):
         st.markdown("---")
         if target_month:
             # バックナンバー編集モード: 対象月を直接保存
-            st.subheader(f"💾 {target_month[:4]}年{int(target_month[4:])}月アーカイブへの保存")
+            st.subheader(f"{target_month[:4]}年{int(target_month[4:])}月アーカイブへの保存")
             st.markdown(f"このページで行ったアップロード・編集内容を **{target_month[:4]}年{int(target_month[4:])}月** のアーカイブへ保存します。")
             if st.button(f"✅ {target_month[:4]}年{int(target_month[4:])}月アーカイブを上書き保存"):
                 from utils.data_manager import archive_month_data, get_file_path
@@ -700,7 +755,7 @@ def admin_page(config, user_master, target_month=None):
                     st.error("保存失敗")
         else:
             # 最新モード: 従来通りの確定・保存ボタン
-            st.subheader("📦 評価データの確定と保存 (バックナンバー作成)")
+            st.subheader("評価データの確定と保存 (バックナンバー作成)")
             st.markdown("現在のメンバー設定、配点設定、実績データを、指定した『年月』のアーカイブとして保存します。")
             col_fix_ym, col_fix_btn = st.columns([1, 1])
             with col_fix_ym:
@@ -746,7 +801,7 @@ def admin_page(config, user_master, target_month=None):
     # --- Tab 4: 計算チェック ---
     # ========================================================
     with tab4:
-        st.header("🔍 計算チェック")
+        st.header("計算チェック")
         st.markdown("設定・データ・計算の整合性を確認します。")
 
         # ────────────────────────────────────────────────────
@@ -1325,7 +1380,7 @@ def build_html_table(df, fixed_cols, score_cols_ordered, totals_label="合計", 
     """
     # Refined CSS for structural Header
     sticky_css = """<style>
-.report-container { overflow: auto; height: 600px; border: 1px solid #ddd; border-radius: 8px; position: relative; }
+.report-container { overflow: auto; overflow-x: scroll; -webkit-overflow-scrolling: touch; height: 600px; border: 1px solid #ddd; border-radius: 8px; position: relative; }
 .report-table { border-collapse: separate; border-spacing: 0; width: 100%; background-color: white; }
 /* ヘッダー固定: padding不要・下揃えベースに変更 */
 .report-table thead th { position: sticky; top: 0; background: #f8f9fa; z-index: 30; border-bottom: 2px solid #dee2e6; border-right: 1px solid #eee; padding: 0; color: #202124; vertical-align: bottom; }
@@ -1831,7 +1886,7 @@ def comprehensive_page(df, target_month=None):
 # 成績詳細ページ
 # =====================================================
 def individual_detail_page(df, target_month=None):
-    st.header("📋 成績詳細")
+    st.header("成績詳細")
 
     if df is None:
         st.info("データをアップロードしてください。")
@@ -1916,20 +1971,20 @@ def individual_detail_page(df, target_month=None):
     
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("📊 総合順位", f"{int(row.get('Rank', 0))}位 / {total_count}{suffix}")
+        st.metric("総合順位", f"{int(row.get('Rank', 0))}位 / {total_count}{suffix}")
     with col2:
-        st.metric("🎯 総合スコア", f"{row.get('Total_Score', 0):.1f}点 / {int(total_weight)}点満点中")
+        st.metric("総合スコア", f"{row.get('Total_Score', 0):.1f}点 / {int(total_weight)}点満点中")
     
     if view_unit == "個人":
         c_shop, c_team = st.columns(2)
         with c_shop:
-            st.markdown(f"**🏢 店舗**")
+            st.markdown(f"**店舗**")
             st.markdown(f"<div style='background-color:#f8f9fa; padding:10px; border-radius:5px; border-left:5px solid #1A73E8; font-size:16px;'>{row.get(shop_col, '-')}</div>", unsafe_allow_html=True)
         with c_team:
-            st.markdown(f"**👥 チーム**")
+            st.markdown(f"**チーム**")
             st.markdown(f"<div style='background-color:#f8f9fa; padding:10px; border-radius:5px; border-left:5px solid #34A853; font-size:16px;'>{row.get(team_col, '-')}</div>", unsafe_allow_html=True)
     elif view_unit == "チーム":
-        st.markdown(f"**🏢 所属店舗**")
+        st.markdown(f"**所属店舗**")
         st.markdown(f"<div style='background-color:#f8f9fa; padding:10px; border-radius:5px; border-left:5px solid #1A73E8; font-size:16px;'>{row.get(shop_col, '-')}</div>", unsafe_allow_html=True)
 
     st.markdown("---")
@@ -1970,10 +2025,10 @@ def individual_detail_page(df, target_month=None):
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
         )
-        st.subheader(f"🕸️ {view_unit}バランスマップ（達成率％）")
+        st.subheader(f"{view_unit}バランスマップ（達成率％）")
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-    st.subheader("📊 項目別スコア詳細")
+    st.subheader("項目別スコア詳細")
     
     # 項目別スコアテーブル
     score_details = []
@@ -2033,7 +2088,7 @@ def individual_detail_page(df, target_month=None):
 # 分析ページ
 # =====================================================
 def analysis_page(df):
-    st.header("📈 分析")
+    st.header("分析")
 
     if df is None:
         st.info("データをアップロードしてください。")
@@ -2067,7 +2122,7 @@ def analysis_page(df):
     items = config.get('items', [])
     item_names = [item.get('name') for item in items if item.get('name')]
 
-    st.subheader("👥 比較・シミュレーション")
+    st.subheader("比較・シミュレーション")
     
     comp_unit = st.radio("比較単位", ["個人", "チーム", "店舗"], horizontal=True, key="comp_unit")
     
@@ -2232,7 +2287,7 @@ def analysis_page(df):
 # 配点シミュレーションページ
 # =====================================================
 def simulation_page(df):
-    st.header("🎯 配点シミュレーション")
+    st.header("配点シミュレーション")
     st.markdown("評価設定を仮で変更して、スコアへの影響をシミュレーションします。実際の設定は変更されません。")
 
     if df is None:
@@ -2247,7 +2302,7 @@ def simulation_page(df):
     items = config.get('items', [])
     item_names = [item.get('name') for item in items]
 
-    st.subheader("⚙️ 配点の仮変更")
+    st.subheader("配点の仮変更")
     st.markdown("各項目の配点を調整して「シミュレーション実行」を押してください。")
 
     import copy
@@ -2290,7 +2345,7 @@ def simulation_page(df):
 
         name_col = 'スタッフ名' if 'スタッフ名' in sim_scored.columns else 'Name'
 
-        st.subheader("📊 シミュレーション結果")
+        st.subheader("シミュレーション結果")
         sim_disp_cols = ['Rank', name_col, 'Total_Score'] + [
             f"{n}_score" for n in item_names if f"{n}_score" in sim_scored.columns
         ]
@@ -2300,7 +2355,7 @@ def simulation_page(df):
         st.dataframe(show, hide_index=True, use_container_width=True)
 
         # 現行vs シミュレーション比較
-        st.subheader("📉 現行 vs シミュレーション 比較")
+        st.subheader("現行 vs シミュレーション 比較")
         orig_scored = calculate_scores(df, config, df_denom)
         compare = pd.merge(
             orig_scored[[name_col, 'Total_Score', 'Rank']].rename(
@@ -2474,7 +2529,7 @@ def rules_page(config=None):
 # 年間表彰ページ
 # =====================================================
 def annual_awards_page(df):
-    st.header("🏆 年間表彰")
+    st.header("年間表彰")
     st.markdown("各月の「満点に対する達成率」の平均で年間ランキングを決定します。月ごとの配点変動の影響を排除した**公平な評価**です。")
 
     import os
@@ -2660,7 +2715,7 @@ def annual_awards_page(df):
                     st.caption(f"参加 {row['参加月数']}ヶ月")
 
         # ── 表彰対象テーブル ──
-        st.markdown("#### 🏅 表彰対象ランキング")
+        st.markdown("#### 表彰対象ランキング")
         if not target_df.empty:
             st.dataframe(target_df, hide_index=True, use_container_width=True)
         else:
@@ -2815,13 +2870,21 @@ def main():
     # ログイン認証ゲート（ページ全体を保護）
     # ============================================================
 
-    # ログインフォームを画面中央に配置するCSS
+    # ログインフォームを画面中央に配置するCSS / ログアウトボタンの中央揃えCSS
     st.markdown("""
     <style>
         /* ログインフォームを中央配置・幅を制限 */
         [data-testid="stForm"] {
             max-width: 400px !important;
             margin: 0 auto !important;
+        }
+        /* ログアウトボタン: サイドバー内の全ボタンを幅いっぱいに */
+        section[data-testid="stSidebar"] button {
+            width: 100% !important;
+            text-align: center !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -2838,7 +2901,7 @@ def main():
     name, authentication_status, username = authenticator.login(
         location="main",
         fields={
-            "Form name": "🔐 ブライトパスくん ログイン",
+            "Form name": "ブライトパスくん ログイン",
             "Username": "ユーザーID",
             "Password": "パスワード",
             "Login": "ログイン",
@@ -2866,209 +2929,361 @@ def main():
         st.session_state["auth_name"] = name
         st.session_state["auth_username"] = username
 
-        # ログアウトボタン（サイドバー）
-        authenticator.logout(button_name="ログアウト", location="sidebar")
+        # ログアウトボタン（サイドバー）- use_container_width=Trueで全幅表示
+        if st.sidebar.button("ログアウト", use_container_width=True, type="secondary"):
+            # セッションをクリアしてログアウト
+            for key in ["_logged_username", "user_role", "auth_name", "auth_username",
+                        "current_mode", "is_admin"]:
+                if key in st.session_state:
+                    del st.session_state[key]
+            # streamlit-authenticatorのセッション変数もクリア
+            for key in list(st.session_state.keys()):
+                if key.startswith("FormSubmitter") or key == "authentication_status" or key == "name" or key == "username":
+                    del st.session_state[key]
+            st.rerun()
 
     st.title("ブライトパスくん")
 
     # CSS injection
     # CSS injection for Material Design & Strict Layout
-    st.markdown('''
+    st.markdown("""
     <style>
-        /* Custom Google-like styling */
-        .main {
-            background-color: #F8F9FA;
-            font-family: 'Roboto', 'Noto Sans JP', sans-serif;
+        /* =============================================
+           ブライトパスくん デザインシステム
+           オーガニック・マテリアルデザイン
+           ============================================= */
+
+        /* Google Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+
+        /* ベーススタイル */
+        html, body {
+            font-family: 'Noto Sans JP', sans-serif !important;
         }
-        h1, h2, h3, h4 {
-            color: #202124;
-            font-weight: 500;
+
+        /* メインエリア背景 */
+        .main, [data-testid="stAppViewContainer"] > .main {
+            background-color: #F5F8FA !important;
         }
-        /* Buttons */
-        .stButton>button {
-            background-color: #1A73E8;
-            color: white;
-            border-radius: 4px;
-            border: none;
-            padding: 8px 24px;
-            font-weight: 500;
-            transition: box-shadow 0.2s;
+        [data-testid="stAppViewContainer"] {
+            background-color: #F5F8FA !important;
         }
-        .stButton>button:hover {
-            box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
-            background-color: #1b66c9;
-            color: white;
+
+        /* 見出し */
+        h1 { color: #2C3E50 !important; font-weight: 700 !important; font-family: 'Noto Sans JP', sans-serif !important; letter-spacing: 0.03em !important; }
+        h2, h3, h4 { color: #2C3E50 !important; font-weight: 600 !important; font-family: 'Noto Sans JP', sans-serif !important; }
+
+        /* =====================
+           ボタン（プライマリ）
+           ===================== */
+        .stButton > button[kind="primary"],
+        .stButton > button[data-testid="baseButton-primary"] {
+            background-color: #0097B2 !important;
+            color: #FFFFFF !important;
+            border: none !important;
+            border-radius: 20px !important;
+            padding: 10px 22px !important;
+            font-weight: 600 !important;
+            font-family: 'Noto Sans JP', sans-serif !important;
+            font-size: 0.88rem !important;
+            letter-spacing: 0.04em !important;
+            box-shadow: 0 2px 8px rgba(0,151,178,0.22) !important;
+            transition: all 0.2s ease !important;
         }
-        /* Tabs */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 24px;
+        .stButton > button[kind="primary"]:hover,
+        .stButton > button[data-testid="baseButton-primary"]:hover {
+            background-color: #007A91 !important;
+            box-shadow: 0 4px 16px rgba(0,151,178,0.35) !important;
+            transform: translateY(-1px) !important;
         }
-        .stTabs [data-baseweb="tab"] {
-            height: 50px;
-            white-space: pre-wrap;
-            background-color: transparent;
-            border-radius: 4px 4px 0 0;
-            gap: 1px;
-            padding-top: 10px;
-            padding-bottom: 10px;
-            font-weight: 500;
+
+        /* ボタン（セカンダリ） */
+        .stButton > button[kind="secondary"],
+        .stButton > button[data-testid="baseButton-secondary"] {
+            background-color: #FFFFFF !important;
+            color: #0097B2 !important;
+            border: 1.5px solid #A8D8E3 !important;
+            border-radius: 20px !important;
+            padding: 10px 22px !important;
+            font-weight: 500 !important;
+            font-family: 'Noto Sans JP', sans-serif !important;
+            font-size: 0.88rem !important;
+            letter-spacing: 0.03em !important;
+            transition: all 0.2s ease !important;
         }
-        /* Upload UI Japanese localization (Aggressive CSS Override) */
+        .stButton > button[kind="secondary"]:hover,
+        .stButton > button[data-testid="baseButton-secondary"]:hover {
+            background-color: #EDF7FA !important;
+            border-color: #0097B2 !important;
+            color: #007A91 !important;
+        }
+
+        /* =====================
+           サイドバー
+           ===================== */
+        section[data-testid="stSidebar"] {
+            background-color: #EBF3F6 !important;
+        }
+        section[data-testid="stSidebar"] > div:first-child {
+            background-color: #EBF3F6 !important;
+            padding-top: 1.5rem !important;
+        }
+
+        /* サイドバー ボタン共通 */
+        section[data-testid="stSidebar"] .stButton > button {
+            border-radius: 16px !important;
+            padding: 10px 14px !important;
+            width: 100% !important;
+            margin-bottom: 4px !important;
+            font-size: 0.88rem !important;
+            font-weight: 500 !important;
+            letter-spacing: 0.03em !important;
+            text-align: center !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            transition: all 0.18s ease !important;
+        }
+
+        /* サイドバー ボタン内部の全要素を全幅・中央揃え */
+        section[data-testid="stSidebar"] .stButton > button > div,
+        section[data-testid="stSidebar"] .stButton > button > div > span,
+        section[data-testid="stSidebar"] .stButton > button > div > span > div {
+            width: 100% !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+        }
+
+        /* サイドバー ボタン p要素（テキスト中央揃え） */
+        section[data-testid="stSidebar"] .stButton > button p {
+            width: 100% !important;
+            text-align: center !important;
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        /* SVGアイコン（::before）を非表示 - テキスト中央揃えのため */
+        section[data-testid="stSidebar"] .stButton > button p::before {
+            display: none !important;
+            content: none !important;
+        }
+
+        /* 総合 - バーチャートアイコン */
+        section[data-testid="stSidebar"] button[aria-label="総合"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A4A4A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='12' width='4' height='9'/%3E%3Crect x='10' y='6' width='4' height='15'/%3E%3Crect x='17' y='3' width='4' height='18'/%3E%3C/svg%3E") !important;
+        }
+        section[data-testid="stSidebar"] button[kind="primary"][aria-label="総合"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='12' width='4' height='9'/%3E%3Crect x='10' y='6' width='4' height='15'/%3E%3Crect x='17' y='3' width='4' height='18'/%3E%3C/svg%3E") !important;
+        }
+
+        /* 件数 - リストアイコン */
+        section[data-testid="stSidebar"] button[aria-label="件数"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A4A4A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='8' y1='6' x2='21' y2='6'/%3E%3Cline x1='8' y1='12' x2='21' y2='12'/%3E%3Cline x1='8' y1='18' x2='21' y2='18'/%3E%3Ccircle cx='3' cy='6' r='1.5' fill='%234A4A4A'/%3E%3Ccircle cx='3' cy='12' r='1.5' fill='%234A4A4A'/%3E%3Ccircle cx='3' cy='18' r='1.5' fill='%234A4A4A'/%3E%3C/svg%3E") !important;
+        }
+        section[data-testid="stSidebar"] button[kind="primary"][aria-label="件数"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='8' y1='6' x2='21' y2='6'/%3E%3Cline x1='8' y1='12' x2='21' y2='12'/%3E%3Cline x1='8' y1='18' x2='21' y2='18'/%3E%3Ccircle cx='3' cy='6' r='1.5' fill='%23FFFFFF'/%3E%3Ccircle cx='3' cy='12' r='1.5' fill='%23FFFFFF'/%3E%3Ccircle cx='3' cy='18' r='1.5' fill='%23FFFFFF'/%3E%3C/svg%3E") !important;
+        }
+
+        /* 順位 - トロフィーアイコン */
+        section[data-testid="stSidebar"] button[aria-label="順位"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A4A4A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3'/%3E%3Cpath d='M18 9h3a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-3'/%3E%3Cpath d='M6 4h12v8a6 6 0 0 1-12 0V4z'/%3E%3Cpath d='M12 18v4'/%3E%3Cpath d='M8 22h8'/%3E%3C/svg%3E") !important;
+        }
+        section[data-testid="stSidebar"] button[kind="primary"][aria-label="順位"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3'/%3E%3Cpath d='M18 9h3a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-3'/%3E%3Cpath d='M6 4h12v8a6 6 0 0 1-12 0V4z'/%3E%3Cpath d='M12 18v4'/%3E%3Cpath d='M8 22h8'/%3E%3C/svg%3E") !important;
+        }
+
+        /* 成績詳細 - 人物アイコン */
+        section[data-testid="stSidebar"] button[aria-label="成績詳細"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A4A4A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M20 21a8 8 0 1 0-16 0'/%3E%3C/svg%3E") !important;
+        }
+        section[data-testid="stSidebar"] button[kind="primary"][aria-label="成績詳細"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M20 21a8 8 0 1 0-16 0'/%3E%3C/svg%3E") !important;
+        }
+
+        /* 分析 - 折れ線グラフアイコン */
+        section[data-testid="stSidebar"] button[aria-label="分析"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A4A4A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='22 12 18 12 15 21 9 3 6 12 2 12'/%3E%3C/svg%3E") !important;
+        }
+        section[data-testid="stSidebar"] button[kind="primary"][aria-label="分析"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='22 12 18 12 15 21 9 3 6 12 2 12'/%3E%3C/svg%3E") !important;
+        }
+
+        /* ルール説明 - ドキュメントアイコン */
+        section[data-testid="stSidebar"] button[aria-label="ルール説明"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A4A4A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3C/svg%3E") !important;
+        }
+        section[data-testid="stSidebar"] button[kind="primary"][aria-label="ルール説明"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3C/svg%3E") !important;
+        }
+
+        /* 配点シミュレーション - スライダーアイコン */
+        section[data-testid="stSidebar"] button[aria-label="配点シミュレーション"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A4A4A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' y1='6' x2='20' y2='6'/%3E%3Cline x1='4' y1='12' x2='20' y2='12'/%3E%3Cline x1='4' y1='18' x2='20' y2='18'/%3E%3Ccircle cx='8' cy='6' r='2' fill='%23F5F8FA'/%3E%3Ccircle cx='15' cy='12' r='2' fill='%23F5F8FA'/%3E%3Ccircle cx='10' cy='18' r='2' fill='%23F5F8FA'/%3E%3C/svg%3E") !important;
+        }
+        section[data-testid="stSidebar"] button[kind="primary"][aria-label="配点シミュレーション"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' y1='6' x2='20' y2='6'/%3E%3Cline x1='4' y1='12' x2='20' y2='12'/%3E%3Cline x1='4' y1='18' x2='20' y2='18'/%3E%3Ccircle cx='8' cy='6' r='2' fill='%230097B2'/%3E%3Ccircle cx='15' cy='12' r='2' fill='%230097B2'/%3E%3Ccircle cx='10' cy='18' r='2' fill='%230097B2'/%3E%3C/svg%3E") !important;
+        }
+
+        /* 年間表彰 - スターアイコン */
+        section[data-testid="stSidebar"] button[aria-label="年間表彰"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A4A4A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/%3E%3C/svg%3E") !important;
+        }
+        section[data-testid="stSidebar"] button[kind="primary"][aria-label="年間表彰"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/%3E%3C/svg%3E") !important;
+        }
+
+        /* 設定 - 歯車アイコン */
+        section[data-testid="stSidebar"] button[aria-label="設定"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A4A4A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E") !important;
+        }
+        section[data-testid="stSidebar"] button[kind="primary"][aria-label="設定"] p::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/%3E%3C/svg%3E") !important;
+        }
+
+        /* =====================
+           タブ
+           ===================== */
+        [data-testid="stTabs"] {
+            background-color: transparent !important;
+        }
+        [data-testid="stTabs"] button {
+            border-radius: 20px !important;
+            border: 1.5px solid #A8D8E3 !important;
+            background-color: #FFFFFF !important;
+            color: #4A4A4A !important;
+            padding: 8px 20px !important;
+            margin-right: 8px !important;
+            margin-bottom: 12px !important;
+            font-size: 0.88rem !important;
+            font-weight: 500 !important;
+            font-family: 'Noto Sans JP', sans-serif !important;
+            transition: all 0.2s ease !important;
+            height: auto !important;
+            min-height: 40px !important;
+        }
+        [data-testid="stTabs"] button:hover {
+            background-color: #EDF7FA !important;
+            border-color: #0097B2 !important;
+            color: #0097B2 !important;
+        }
+        [data-testid="stTabs"] button[aria-selected="true"] {
+            background-color: #0097B2 !important;
+            color: #FFFFFF !important;
+            border-color: #0097B2 !important;
+            box-shadow: 0 2px 8px rgba(0,151,178,0.25) !important;
+        }
+        [data-testid="stTabs"] button[aria-selected="true"] p {
+            color: #FFFFFF !important;
+        }
+        div[data-baseweb="tab-highlight"] { display: none !important; }
+
+        /* =====================
+           テーブル / データフレーム
+           ===================== */
+        [data-testid="stDataFrame"] {
+            background-color: #FFFFFF;
+            border-radius: 12px !important;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important;
+            border: none !important;
+            overflow: hidden;
+            width: 100% !important;
+        }
+        [data-testid="stDataFrame"] > div > div {
+            border-radius: 12px !important;
+        }
+        thead tr th {
+            color: #7F8C8D !important;
+            font-size: 0.82rem !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.04em !important;
+            background-color: #F5F8FA !important;
+            border-bottom: 1.5px solid #E0E8EB !important;
+        }
+
+        /* =====================
+           ログインフォーム
+           ===================== */
+        [data-testid="stForm"] {
+            max-width: 420px !important;
+            margin: 2rem auto !important;
+            background-color: #FFFFFF !important;
+            border-radius: 16px !important;
+            padding: 2rem !important;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08) !important;
+            border: none !important;
+        }
+
+        /* =====================
+           ダウンロードボタン
+           ===================== */
+        .stDownloadButton > button {
+            border-radius: 20px !important;
+            font-weight: 600 !important;
+            background-color: #FFFFFF !important;
+            color: #0097B2 !important;
+            border: 1.5px solid #A8D8E3 !important;
+            width: 100% !important;
+            transition: all 0.2s ease !important;
+        }
+        .stDownloadButton > button:hover {
+            background-color: #EDF7FA !important;
+            border-color: #0097B2 !important;
+        }
+
+        /* =====================
+           ファイルアップローダー
+           ===================== */
+        [data-testid="stFileUploaderDropzone"] {
+            background-color: #FFFFFF;
+            border: 1.5px dashed #0097B2;
+            border-radius: 12px;
+        }
+        [data-testid="stFileUploaderDropzone"] button {
+            border-radius: 16px !important;
+            background-color: #FFFFFF !important;
+            color: #0097B2 !important;
+            box-shadow: none !important;
+            border: 1.5px solid #A8D8E3 !important;
+        }
+        /* ファイルアップローダー日本語化 */
         [data-testid="stFileUploadDropzone"] > div > small,
         [data-testid="stFileUploaderDropzone"] > div > small,
         [data-testid="stFileUploadDropzone"] > div > div > span,
         [data-testid="stFileUploaderDropzone"] > div > div > span {
             display: none !important;
-            visibility: hidden !important;
         }
         [data-testid="stFileUploadDropzone"] > div::before,
         [data-testid="stFileUploaderDropzone"] > div::before {
-            content: "エクセルをここにドラッグ＆ドロップ \A (または右のボタンから選択)";
-            white-space: pre;
+            content: "エクセルをここにドラッグ＆ドロップ (または右のボタンから選択)";
             display: block;
             text-align: center;
             font-size: 14px;
-            color: #4A4A4A;
+            color: #7F8C8D;
             margin-bottom: 8px;
         }
-        [data-testid="stFileUploadDropzone"] > div::after,
-        [data-testid="stFileUploaderDropzone"] > div::after {
-            content: "上限 200MB / CSV, XLSX";
-            display: block;
-            text-align: center;
-            font-size: 12px;
-            color: #8C8C8C;
-        }
-        /* Import Google Fonts */
-        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
 
-        /* Global Font Settings */
-        html, body, [class*="css"] {
-            padding: 10px 24px !important;
-            font-weight: 600 !important;
+        /* =====================
+           アラート
+           ===================== */
+        [data-testid="stAlert"] {
+            border-radius: 12px !important;
             border: none !important;
-            background-color: #1A73E8 !important; /* Google Blue */
-            color: #FFFFFF !important;
-            box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3) !important;
-            transition: all 0.2s ease-in-out !important;
-            width: 100% !important; /* Sidebarに合わせる */
-        }
-        .stButton > button:hover {
-            box-shadow: 0 2px 4px 1px rgba(60,64,67,0.2) !important;
-            background-color: #1765CC !important;
-            transform: translateY(-1px);
-        }
-        
-        /* Outline/Secondary button for Admin Login/Logout etc to not be fully blue if needed, 
-           but per request we try to make them look like the image. We'll leave them unified for now. */
-
-        /* Download Button specific */
-        .stDownloadButton > button {
-            border-radius: 6px !important;
-            font-weight: 600 !important;
-            background-color: #FFFFFF !important;
-            color: #1A73E8 !important;
-            border: 1px solid #DADCE0 !important;
-            width: 100% !important;
-        }
-        .stDownloadButton > button:hover {
-            background-color: #F8FAFD !important;
-            border: 1px solid #D2E3FC !important;
         }
 
-        /* 3. タブのボタンスタイル化 */
-        [data-testid="stTabs"] {
-            background-color: transparent !important;
-        }
-        [data-testid="stTabs"] button {
-            font-size: 1rem;
-            font-weight: 600;
-            color: #5F6368 !important;
-            /* Inactive tab style = gray outline button */
-            border: 1px solid #DADCE0 !important;
-            border-radius: 6px !important;
-            background-color: #FFFFFF !important;
-            padding: 8px 24px !important;
-            margin-right: 12px !important;
-            margin-bottom: 16px !important;
-            box-shadow: 0 1px 2px rgba(60,64,67,0.1);
-            transition: all 0.2s ease-in-out !important;
-            height: auto !important;
-            min-height: 40px !important;
-        }
-        [data-testid="stTabs"] button:hover {
-            background-color: #F8F9FA !important;
-            border-color: #1A73E8 !important;
-            color: #1A73E8 !important;
-        }
-        [data-testid="stTabs"] button[aria-selected="true"] {
-            /* Active tab style = '投稿の作成' reference blue button */
-            background-color: #1A73E8 !important;
-            color: #FFFFFF !important;
-            border: 1px solid #1A73E8 !important;
-            box-shadow: 0 1px 3px rgba(60,64,67,0.3) !important;
-        }
-        [data-testid="stTabs"] button[aria-selected="true"] p {
-            color: #FFFFFF !important;
-        }
-        
-        /* 邪魔なデフォルトのタブのアンダーラインを消す */
-        div[data-baseweb="tab-highlight"] { display: none !important; }
-        
-        
-        /* 4. DataFrames (Tables) - Card Style & Strict Layout */
-        [data-testid="stDataFrame"] {
-            background-color: #FFFFFF;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px 0 rgba(60,64,67,0.15), 0 1px 2px 0 rgba(60,64,67,0.3);
-            border: 1px solid #E8EAED;
-            margin-bottom: 0 !important; /* Reset margin for strict grid */
-        }
-        
-        /* Hide element index in dataframe to tighten layout */
-        [data-testid="stDataFrame"] > div > div {
-             border-radius: 8px; /* Force internal rounding */
-        }
-        
-        /* Table Headers */
-        thead tr th {
-            color: #5F6368 !important;
-            font-size: 0.85rem !important;
-            font-weight: 600 !important;
-            border-bottom: 2px solid #E8EAED !important;
-            background-color: #F8F9FA !important; /* わずかに色をつけてヘッダー帯を明確に */
-        }
-
-        /* File Uploader */
-        [data-testid="stFileUploaderDropzone"] {
-            background-color: #FFFFFF;
-            border: 1px dashed #1A73E8;
-            border-radius: 8px;
-        }
-        [data-testid="stFileUploaderDropzone"] button {
-            border-radius: 6px !important;
-            background-color: #FFFFFF !important;
-            color: #1A73E8 !important;
-            box-shadow: none !important;
-            border: 1px solid #DADCE0 !important;
-        }
-        /* Sticky Table Header for overall tables */
+        /* Sticky Table Header */
         .report-container {
             max-height: 70vh !important;
         }
-
-        /* Responsive width for dataframes */
-        [data-testid="stDataFrame"] {
-            width: 100% !important;
-        }
     </style>
-    ''', unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
     # --- Configuration loading ---
     config = load_scoring_config()
     user_master = load_user_master()
 
     # --- Sidebar: Back Number Selection ---
-    st.sidebar.header("📅 バックナンバー選択")
+    st.sidebar.header("バックナンバー選択")
 
     from datetime import datetime
     now = datetime.now()
