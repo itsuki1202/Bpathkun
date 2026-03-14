@@ -1555,6 +1555,33 @@ th.sticky-col { z-index: 40 !important; background: #f8f9fa !important; }
   min-width: max-content;
   margin-top: 1px;
 }
+/* PC: shop-shortは非表示・shop-fullは表示 */
+.shop-short { display: none; }
+.shop-full { display: inline; }
+/* ===== モバイル専用スタイル（768px以下のみ適用・PCには影響なし） ===== */
+@media screen and (max-width: 768px) {
+  /* テーブルのフォントサイズ・余白を縮小 */
+  .report-table td { font-size: 10px !important; padding: 4px 5px !important; }
+  /* 固定列（店舗・チーム・スタッフ名）の幅を縮小して数値列を見やすく */
+  .sticky-col { min-width: 60px !important; max-width: 80px !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  th.sticky-col { min-width: 60px !important; }
+  /* 固定列のleft位置をモバイル幅（各60px）に合わせて上書き（位置ズレ修正） */
+  .report-table td.sticky-col:nth-child(1), .report-table th.sticky-col:nth-child(1) { left: 0px !important; }
+  .report-table td.sticky-col:nth-child(2), .report-table th.sticky-col:nth-child(2) { left: 60px !important; }
+  .report-table td.sticky-col:nth-child(3), .report-table th.sticky-col:nth-child(3) { left: 120px !important; }
+  /* スコア列の幅も縮小 */
+  .report-table th { min-width: 60px !important; width: auto !important; }
+  /* ヘッダーのテキストを小さく */
+  .header-wrapper { min-width: 60px !important; padding: 3px 4px !important; }
+  .header-item { font-size: 8px !important; }
+  .header-type { font-size: 7px !important; }
+  .header-weight { font-size: 8px !important; }
+  /* コンテナ高さをモバイル向けに最適化 */
+  .report-container { height: 420px !important; }
+  /* モバイルでは店舗名を短縮表示（「ドコモショップ」を除去） */
+  .shop-full { display: none; }
+  .shop-short { display: inline; }
+}
 </style>"""
     
     etype_jp = {
@@ -1632,7 +1659,14 @@ th.sticky-col { z-index: 40 !important; background: #f8f9fa !important; }
             v = row.get(col, '')
             min_w = 160 if ("スタッフ" in col or "Name" in col or "名" in col or "店舗" in col or "Shop" in col) else 100
             style = f"left: {col_offsets[i]}px; min-width: {min_w}px;"
-            html.append(f'<td class="text-left sticky-col" style="{style}">{v}</td>')
+            # 店舗列はモバイル用に「ドコモショップ」を除いた短縮名も出力（PC非表示・モバイル表示）
+            is_shop_col = ("店舗" in col or "Shop" in col) and "スタッフ" not in col
+            if is_shop_col:
+                short_v = str(v).replace("ドコモショップ", "") if v else v
+                cell_content = f'<span class="shop-full">{v}</span><span class="shop-short">{short_v}</span>'
+            else:
+                cell_content = str(v) if v is not None else ''
+            html.append(f'<td class="text-left sticky-col" style="{style}">{cell_content}</td>')
             
         for sc, _, _, _ in score_cols_ordered:
             v = row.get(sc, 0)

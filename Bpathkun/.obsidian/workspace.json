@@ -11,17 +11,10 @@
             "id": "285a532180402a73",
             "type": "leaf",
             "state": {
-              "type": "canvas",
-              "state": {
-                "file": "ブライトパスくん.canvas",
-                "viewState": {
-                  "x": 600.0092334108982,
-                  "y": -302.1861466774426,
-                  "zoom": -0.6666666666666667
-                }
-              },
-              "icon": "lucide-layout-dashboard",
-              "title": "ブライトパスくん"
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "新規タブ"
             }
           }
         ]
