@@ -3088,8 +3088,10 @@ def main():
         st.session_state["auth_username"] = username
 
         # ログアウトボタン（サイドバー）
-        # authenticator.logout() を使うことでクッキーも正しく削除される
-        authenticator.logout("ログアウト", location="sidebar", key="logout_btn")
+        # callbackでst.rerun()を呼び、ログイン画面へ強制遷移させる
+        def _do_logout(context):
+            st.rerun()
+        authenticator.logout("ログアウト", location="sidebar", key="logout_btn", callback=_do_logout)
 
     st.title("ブライトパスくん")
 
