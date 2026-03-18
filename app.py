@@ -107,9 +107,9 @@ def admin_page(config, user_master, target_month=None):
     # タブ: ユーザー管理（管理者のみ）
     # ============================================================
     with tab_users:
-        # 管理者ロールチェック
-        if st.session_state.get("user_role") != "admin":
-            st.warning("⛔ この画面は管理者のみアクセスできます。")
+        # superadmin のみアクセス可能
+        if st.session_state.get("user_role") != "superadmin":
+            st.warning("⛔ この画面は最高管理者のみアクセスできます。")
         else:
             st.subheader("ユーザー管理")
             _ac = load_auth_config()
@@ -135,7 +135,7 @@ def admin_page(config, user_master, target_month=None):
                     _new_name   = st.text_input("表示名", placeholder="例: 田中 太郎")
                 with _col2:
                     _new_pw     = st.text_input("初期パスワード", type="password")
-                    _new_role   = st.selectbox("ロール", ["viewer", "admin"])
+                    _new_role   = st.selectbox("ロール", ["viewer", "admin", "superadmin"])
                 if st.form_submit_button("追加する"):
                     _ok, _msg = add_user(_ac, _new_uid, _new_name, "", _new_pw, _new_role)
                     if _ok:
@@ -220,7 +220,8 @@ def admin_page(config, user_master, target_month=None):
             # --- ユーザー削除 ---
             st.markdown("#### ユーザーを削除")
             with st.form("del_user_form", clear_on_submit=True):
-                _del_uid_list = [u["username"] for u in _users if u["username"] != "admin"]
+                # superadmin ロールのユーザーは削除不可（全員保護）
+                _del_uid_list = [u["username"] for u in _users if u["role"] != "superadmin"]
                 _del_uid = st.selectbox("削除対象ユーザー", _del_uid_list) if _del_uid_list else None
                 if st.form_submit_button("削除する"):
                     if _del_uid:
@@ -232,11 +233,12 @@ def admin_page(config, user_master, target_month=None):
                             st.error(_msg3)
 
     # ============================================================
-    # タブ: ログチェック（管理者のみ）
+    # タブ: ログチェック（最高管理者のみ）
     # ============================================================
     with tab_log:
-        if st.session_state.get("user_role") != "admin":
-            st.warning("⛔ この画面は管理者のみアクセスできます。")
+        # superadmin のみアクセス可能
+        if st.session_state.get("user_role") != "superadmin":
+            st.warning("⛔ この画面は最高管理者のみアクセスできます。")
         else:
             st.subheader("ログイン履歴")
             _log_df = load_login_log()
@@ -3515,7 +3517,13 @@ def main():
     # ログインユーザー情報をサイドバーに表示
     _auth_name_disp = st.session_state.get("auth_name", "")
     _auth_role_disp = st.session_state.get("user_role", "viewer")
-    _role_label = "👑 管理者" if _auth_role_disp == "admin" else "👤 スタッフ"
+    # ロールラベルを3段階で切り替え
+    if _auth_role_disp == "superadmin":
+        _role_label = "🔑 最高管理者"
+    elif _auth_role_disp == "admin":
+        _role_label = "👑 管理者"
+    else:
+        _role_label = "👤 スタッフ"
     st.sidebar.markdown(
         f"<div style='font-size:0.85rem; color:#5F6368; margin-bottom:4px;'>ログイン中: <b>{_auth_name_disp}</b>　{_role_label}</div>",
         unsafe_allow_html=True
@@ -3523,7 +3531,8 @@ def main():
     st.sidebar.markdown("---")
 
     # ロールベースで is_admin を決定（旧パスワード認証の代替）
-    st.session_state['is_admin'] = (_auth_role_disp == "admin")
+    # admin または superadmin の場合に管理者メニューを表示
+    st.session_state['is_admin'] = (_auth_role_disp in ("admin", "superadmin"))
 
     # State for Mode
     if 'current_mode' not in st.session_state:
@@ -3568,7 +3577,9 @@ def main():
         if st.sidebar.button("設定", use_container_width=True, type="primary" if st.session_state['current_mode'] == "設定 (Admin)" else "secondary"):
             st.session_state['current_mode'] = "設定 (Admin)"
             st.rerun()
-        # CX分配くんボタン（管理者専用）
+
+    # CX分配くんボタン（最高管理者専用）
+    if st.session_state.get("user_role") == "superadmin":
         if st.sidebar.button("💰 CX分配くん", use_container_width=True, type="primary" if st.session_state['current_mode'] == "CX分配くん" else "secondary"):
             st.session_state['current_mode'] = "CX分配くん"
             st.rerun()
@@ -3695,9 +3706,9 @@ def main():
 # ============================================================
 def cx_distributor_page(df, config, user_master, target_month=None):
     """CX分配くん: インセンティブ計算・管理者専用ページ"""
-    # 管理者ロールチェック
-    if st.session_state.get("user_role") != "admin":
-        st.warning("⛔ この画面は管理者のみアクセスできます。")
+    # 最高管理者専用
+    if st.session_state.get("user_role") != "superadmin":
+        st.warning("⛔ この画面は最高管理者のみアクセスできます。")
         return
 
     # 対象月の決定

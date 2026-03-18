@@ -95,8 +95,9 @@ def delete_user(config: dict, username: str) -> tuple:
     usernames = config.get("credentials", {}).get("usernames", {})
     if username not in usernames:
         return False, f"ユーザーID「{username}」は存在しません"
-    if username == "admin":
-        return False, "管理者アカウントは削除できません"
+    # superadmin ロールのユーザーは削除不可
+    if usernames[username].get("role") == "superadmin":
+        return False, f"最高管理者アカウントは削除できません"
     del usernames[username]
     config["credentials"]["usernames"] = usernames
     save_auth_config(config)
@@ -174,7 +175,7 @@ def generate_user_template_excel() -> bytes:
         "英数字のみ。例: tanaka01",
         "画面に表示される名前。例: 田中 太郎",
         "初期パスワード（平文で記入）",
-        "viewer または admin"
+        "viewer / admin / superadmin"
     ]
 
     # スタイル定義
@@ -236,7 +237,7 @@ def bulk_add_users(config: dict, df: pd.DataFrame) -> tuple:
     success_count  = 0
     skip_count     = 0
     messages       = []
-    valid_roles    = {"viewer", "admin"}
+    valid_roles    = {"viewer", "admin", "superadmin"}
 
     for _, row in df.iterrows():
         uid  = str(row.get("ユーザーID", "")).strip()
