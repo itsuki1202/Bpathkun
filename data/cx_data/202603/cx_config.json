@@ -1,0 +1,218 @@
+{
+  "month": "202603",
+  "cx_total_points": 1000000,
+  "base_pt": 50,
+  "calculation_mode": "A",
+  "skill_allowances": {
+    "フロントスペシャリスト": 63750,
+    "グランマイスター": 38250,
+    "マイスター": 17000,
+    "プレマイスター": 4250
+  },
+  "members": [
+    {
+      "name": "小橋実央",
+      "role": "role_leader",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "箱崎琳",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "岡本陽子",
+      "role": "role_member",
+      "skill_type": "フロントスペシャリスト",
+      "manual_pt": null
+    },
+    {
+      "name": "西山未海",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "高橋直也",
+      "role": "role_leader",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "高橋美和",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "家原優賀",
+      "role": "role_member",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "高角健太郎",
+      "role": "role_leader",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "四倉祐貴",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "青江光洋",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "日下梨紗",
+      "role": "role_leader",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "渡辺邦彦",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "居森明彦",
+      "role": "role_member",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "石田理香",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "鶴田絵梨香",
+      "role": "role_leader",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "三原由香",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "美濃勝志",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "河田順子",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "福田大樹",
+      "role": "role_leader",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "金尾純子",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "小澤裕大",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "藤田充教",
+      "role": "role_leader",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "鳥谷大介",
+      "role": "role_member",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "中田歩美",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "平田達也",
+      "role": "role_member",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "鍵本拓也",
+      "role": "role_member",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "高橋しのぶ",
+      "role": "role_leader",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "滝澤創強",
+      "role": "role_member",
+      "skill_type": "なし",
+      "manual_pt": null
+    },
+    {
+      "name": "太田洋盛",
+      "role": "role_member",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "玉木聡彦",
+      "role": "role_member",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "古谷隆明",
+      "role": "role_member",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "飯塚優樹",
+      "role": "role_manager",
+      "skill_type": "フロントスペシャリスト",
+      "manual_pt": null
+    },
+    {
+      "name": "中村有作",
+      "role": "role_manager",
+      "skill_type": "マイスター",
+      "manual_pt": null
+    },
+    {
+      "name": "守谷有貴",
+      "role": "role_manager",
+      "skill_type": "グランマイスター",
+      "manual_pt": null
+    }
+  ]
+}

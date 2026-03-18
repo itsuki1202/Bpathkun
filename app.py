@@ -22,6 +22,13 @@ from utils.auth_manager import (
     generate_user_template_excel, bulk_add_users
 )
 import streamlit_authenticator as stauth
+# CX分配くんる用モジュール（既存ロジックには一切たっていない）
+from utils.cx_distributor import (
+    load_cx_config, save_cx_config, get_default_cx_members,
+    calculate_cx_distribution, SKILL_TYPES, ROLE_LABELS, ROLE_LABELS_REV,
+    MANAGER_DEFAULT_PTS, MANAGER_DEFAULT_RATIOS,
+    LEADER_DEFAULT_PTS, LEADER_DEFAULT_RATIOS,
+)
 
 def normalize_text(text):
     """姓名や店舗名・チーム名の空白・記号・表記揺れを徹底排除して正規化する"""
@@ -3561,6 +3568,10 @@ def main():
         if st.sidebar.button("設定", use_container_width=True, type="primary" if st.session_state['current_mode'] == "設定 (Admin)" else "secondary"):
             st.session_state['current_mode'] = "設定 (Admin)"
             st.rerun()
+        # CX分配くんボタン（管理者専用）
+        if st.sidebar.button("💰 CX分配くん", use_container_width=True, type="primary" if st.session_state['current_mode'] == "CX分配くん" else "secondary"):
+            st.session_state['current_mode'] = "CX分配くん"
+            st.rerun()
 
     # --- サイドバー最下部: 一括Excelダウンロード ---
     st.sidebar.markdown("---")
@@ -3673,9 +3684,448 @@ def main():
         annual_awards_page(df)
     elif mode == "ルール説明":
         rules_page(config)
+    elif mode == "CX分配くん":
+        # 既存ロジックの再利用（読み込みのみ）
+        cx_distributor_page(df, config, user_master, target_month=target_month)
     else:
         comprehensive_page(df, target_month=target_month)
 
+# ============================================================
+# CX分配くん ページ（管理者専用 / 既存ロジック不変）
+# ============================================================
+def cx_distributor_page(df, config, user_master, target_month=None):
+    """CX分配くん: インセンティブ計算・管理者専用ページ"""
+    # 管理者ロールチェック
+    if st.session_state.get("user_role") != "admin":
+        st.warning("⛔ この画面は管理者のみアクセスできます。")
+        return
+
+    # 対象月の決定
+    from datetime import datetime
+    if target_month:
+        month_str = target_month  # YYYYMM
+    else:
+        month_str = datetime.now().strftime("%Y%m")
+
+    year_label = month_str[:4]
+    month_label = str(int(month_str[4:]))
+
+    st.header(f"💰 CX分配くん ── {year_label}年{month_label}月")
+    st.caption("インセンティブ分配を計算する管理者専用ツールです。既存の成績ランキングを参照します。")
+
+    # CX設定の読み込み
+    cx_config = load_cx_config(month_str)
+
+    # タブ構成
+    tab_settings, tab_result = st.tabs(["⚙️ 設定", "📊 計算結果"])
+
+    # ============================================================
+    # 設定タブ
+    # ============================================================
+    with tab_settings:
+        st.markdown("### 基本設定")
+
+        col_mode, col_base = st.columns(2)
+        with col_mode:
+            # 計算モードの切り替え
+            mode_options = {
+                "A：移行期間モード（旧手当保証＋余剰分配）": "A",
+                "B：完全分配モード（全額ポイント分配）": "B",
+            }
+            current_mode_label = next(
+                (k for k, v in mode_options.items() if v == cx_config.get("calculation_mode", "A")),
+                "A：移行期間モード（旧手当保証＋余剰分配）"
+            )
+            selected_mode_label = st.radio(
+                "計算モード（フェーズ）",
+                list(mode_options.keys()),
+                index=list(mode_options.keys()).index(current_mode_label),
+                help="モードA: 旧手当を固定保証した上で余剰を分配。モードB: 全額をポイント分配。"
+            )
+            cx_config["calculation_mode"] = mode_options[selected_mode_label]
+
+        with col_base:
+            # 当月CXポイント原資
+            cx_config["cx_total_points"] = st.number_input(
+                f"当月CXポイント原資（{year_label}年{month_label}月）",
+                min_value=0,
+                value=int(cx_config.get("cx_total_points", 0)),
+                step=1000,
+                help="当月の総インセンティブ原資（円）を入力してください。"
+            )
+            # ベースポイント
+            cx_config["base_pt"] = st.number_input(
+                "ベースポイント（全員一律）",
+                min_value=0,
+                value=int(cx_config.get("base_pt", 50)),
+                step=1,
+                help="全スタッフに付与する基礎ポイント。デフォルトは50pt。"
+            )
+
+        st.markdown("---")
+        st.markdown("### スキル手当設定（ドコモ支援費：月額）")
+        st.caption("各スキル資格手当の月額金額（円）を設定してください。各スタッフに割り当てた区分の金額が旧手当計算に使われます。")
+
+        skill_cols = st.columns(4)
+        skill_allowances = cx_config.get("skill_allowances", {})
+        skill_names = ["フロントスペシャリスト", "グランマイスター", "マイスター", "プレマイスター"]
+        for i, sk in enumerate(skill_names):
+            with skill_cols[i]:
+                skill_allowances[sk] = st.number_input(
+                    sk,
+                    min_value=0,
+                    value=int(skill_allowances.get(sk, 0)),
+                    step=50,
+                    key=f"skill_{sk}"
+                )
+        cx_config["skill_allowances"] = skill_allowances
+
+        st.markdown("---")
+        st.markdown("### 成果ポイントテーブル設定")
+        st.caption("店長・リーダーの順位別ポイント、スタッフの上下限を設定できます。「1位の値」を変えるとデフォルト比率で他の順位が自動再計算されます。直接入力も可賭。")
+
+        # ---- 店長ポイントテーブル（動的行追加対応） ----
+        with st.expander("🏢 店長 成果ポイント（行追加で店舗数増加に対応）", expanded=False):
+            st.caption("1位（トップ）を変えるとデフォルト比率で全行が自動計算されます。行の追加・削除も可能です。")
+
+            # session_stateキー（月別にユニーク化）
+            _mgr_sk = f"cx_mgr_table_{month_str}"
+
+            # 初回または設定変更時にsession_stateを初期化
+            mgr_pts_raw = cx_config.get("manager_pts", {str(k): v for k, v in MANAGER_DEFAULT_PTS.items()})
+            if _mgr_sk not in st.session_state:
+                st.session_state[_mgr_sk] = pd.DataFrame([
+                    {"順位": int(k), "成果pt": int(v)}
+                    for k, v in sorted(mgr_pts_raw.items(), key=lambda x: int(x[0]))
+                ])
+
+            def _recalc_mgr_dyn():
+                """1位トップ値から全行を比率で再計算してsession_stateを更新"""
+                top = st.session_state.get("cx_mgr_top_input", 130)
+                cur_df = st.session_state[_mgr_sk].copy()
+                for i, row in cur_df.iterrows():
+                    rk = int(row["順位"])
+                    ratio = MANAGER_DEFAULT_RATIOS.get(rk, 0)
+                    cur_df.at[i, "成果pt"] = round(top * ratio)
+                if not cur_df.empty:
+                    cur_df.at[0, "成果pt"] = top  # 1位は必ずtop値
+                st.session_state[_mgr_sk] = cur_df
+
+            # 現在の1位の値を取得
+            _mgr_cur_top = int(st.session_state[_mgr_sk].iloc[0]["成果pt"]) if not st.session_state[_mgr_sk].empty else 130
+            st.number_input(
+                "1位（トップ）← ここを変えると比率で全行自動計算",
+                min_value=0, value=_mgr_cur_top, step=1,
+                key="cx_mgr_top_input",
+                on_change=_recalc_mgr_dyn,
+            )
+
+            # 動的テーブル（行追加・削除可能）
+            edited_mgr_df = st.data_editor(
+                st.session_state[_mgr_sk],
+                column_config={
+                    "順位": st.column_config.NumberColumn("順位", min_value=1, step=1, help="店舗ランキングの順位"),
+                    "成果pt": st.column_config.NumberColumn("成果pt", min_value=0, step=1, help="該当順位の成果ポイント"),
+                },
+                num_rows="dynamic",
+                use_container_width=True,
+                key=f"cx_mgr_editor_{month_str}",
+            )
+            # data_editorの編集結果をconfig用dictに変換
+            cx_config["manager_pts"] = {
+                str(int(row["順位"])): int(row["成果pt"])
+                for _, row in edited_mgr_df.dropna(subset=["順位", "成果pt"]).iterrows()
+                if pd.notna(row["順位"]) and pd.notna(row["成果pt"])
+            }
+
+        # ---- リーダーポイントテーブル（動的行追加対応） ----
+        with st.expander("👥 リーダー 成果ポイント（行追加でチーム数増加に対応）", expanded=False):
+            st.caption("1位（トップ）を変えるとデフォルト比率で全行が自動計算されます。7位以下はデフォルト0pt。行追加で対応できます。")
+
+            _ldr_sk = f"cx_ldr_table_{month_str}"
+
+            ldr_pts_raw = cx_config.get("leader_pts", {str(k): v for k, v in LEADER_DEFAULT_PTS.items()})
+            if _ldr_sk not in st.session_state:
+                st.session_state[_ldr_sk] = pd.DataFrame([
+                    {"順位": int(k), "成果pt": int(v)}
+                    for k, v in sorted(ldr_pts_raw.items(), key=lambda x: int(x[0]))
+                ])
+
+            def _recalc_ldr_dyn():
+                """1位トップ値から全行を比率で再計算してsession_stateを更新"""
+                top = st.session_state.get("cx_ldr_top_input", 120)
+                cur_df = st.session_state[_ldr_sk].copy()
+                for i, row in cur_df.iterrows():
+                    rk = int(row["順位"])
+                    ratio = LEADER_DEFAULT_RATIOS.get(rk, 0)
+                    cur_df.at[i, "成果pt"] = round(top * ratio)
+                if not cur_df.empty:
+                    cur_df.at[0, "成果pt"] = top  # 1位は必ずtop値
+                st.session_state[_ldr_sk] = cur_df
+
+            _ldr_cur_top = int(st.session_state[_ldr_sk].iloc[0]["成果pt"]) if not st.session_state[_ldr_sk].empty else 120
+            st.number_input(
+                "1位（トップ）← ここを変えると比率で全行自動計算",
+                min_value=0, value=_ldr_cur_top, step=1,
+                key="cx_ldr_top_input",
+                on_change=_recalc_ldr_dyn,
+            )
+
+            edited_ldr_df = st.data_editor(
+                st.session_state[_ldr_sk],
+                column_config={
+                    "順位": st.column_config.NumberColumn("順位", min_value=1, step=1, help="チームランキングの順位"),
+                    "成果pt": st.column_config.NumberColumn("成果pt", min_value=0, step=1, help="該当順位の成果ポイント"),
+                },
+                num_rows="dynamic",
+                use_container_width=True,
+                key=f"cx_ldr_editor_{month_str}",
+            )
+            cx_config["leader_pts"] = {
+                str(int(row["順位"])): int(row["成果pt"])
+                for _, row in edited_ldr_df.dropna(subset=["順位", "成果pt"]).iterrows()
+                if pd.notna(row["順位"]) and pd.notna(row["成果pt"])
+            }
+
+        # ---- スタッフ 線形補間設定 ----
+        with st.expander("👤 スタッフ 成果ポイント（1位上限・最下位下限を設定）", expanded=False):
+            st.caption("役職者を除外したスタッフランキングに基づく線形補間の上限（１位）と下限（最下位）を設定します。")
+            col_top, col_bottom = st.columns(2)
+            with col_top:
+                cx_config["member_pt_top"] = st.number_input(
+                    "1位（上限 pt）",
+                    min_value=0,
+                    value=int(cx_config.get("member_pt_top", 100)),
+                    step=1,
+                    key="cx_member_pt_top",
+                    help="スタッフランキング1位の成果ポイント"
+                )
+            with col_bottom:
+                cx_config["member_pt_bottom"] = st.number_input(
+                    "最下位（下限 pt）",
+                    min_value=0,
+                    value=int(cx_config.get("member_pt_bottom", 0)),
+                    step=1,
+                    key="cx_member_pt_bottom",
+                    help="スタッフランキング最下位の成果ポイント"
+                )
+
+        st.markdown("---")
+        st.markdown("### スタッフ管理")
+
+        # 既存メンバーが空の場合、user_masterから自動転記
+        if not cx_config.get("members"):
+            cx_config["members"] = get_default_cx_members(user_master)
+            st.info("ℹ️ ブライトパスくんのメンバー設定を自動転記しました。役職・スキル手当を確認・修正してください。")
+
+        members = cx_config["members"]
+
+        # スタッフ一覧テーブル（編集可能）
+        members_df = pd.DataFrame(members)
+        if members_df.empty:
+            members_df = pd.DataFrame(columns=["name", "role", "skill_type", "manual_pt"])
+
+        # 表示列の整備
+        for col in ["name", "role", "skill_type", "manual_pt"]:
+            if col not in members_df.columns:
+                members_df[col] = "" if col != "manual_pt" else None
+
+        # 役職を日本語ラベルで表示
+        members_df["role_label"] = members_df["role"].map(ROLE_LABELS).fillna("スタッフ")
+        display_df = members_df[["name", "role_label", "skill_type", "manual_pt"]].copy()
+        display_df.columns = ["スタッフ名", "役職", "スキル手当区分", "手動ポイント(空=自動)"]
+
+        edited_df = st.data_editor(
+            display_df,
+            column_config={
+                "スタッフ名": st.column_config.TextColumn("スタッフ名"),
+                "役職": st.column_config.SelectboxColumn(
+                    "役職",
+                    options=["店長", "リーダー", "スタッフ"],
+                    required=True,
+                ),
+                "スキル手当区分": st.column_config.SelectboxColumn(
+                    "スキル手当区分",
+                    options=SKILL_TYPES,
+                    required=True,
+                ),
+                "手動ポイント(空=自動)": st.column_config.NumberColumn(
+                    "手動ポイント(空=自動)",
+                    help="ランキングなしのスタッフに直接ポイントを入力。空欄の場合は自動計算。",
+                    min_value=0,
+                    step=1,
+                ),
+            },
+            num_rows="dynamic",
+            use_container_width=True,
+            key="cx_member_editor",
+        )
+
+        # 保存ボタン
+        if st.button("💾 設定を保存", type="primary", use_container_width=True):
+            new_members = []
+            for _, row in edited_df.iterrows():
+                name = str(row.get("スタッフ名", "")).strip()
+                if not name:
+                    continue
+                role_jp = str(row.get("役職", "スタッフ"))
+                role_key = ROLE_LABELS_REV.get(role_jp, "role_member")
+                manual_pt_val = row.get("手動ポイント(空=自動)")
+                manual_pt = None
+                if manual_pt_val is not None and not (isinstance(manual_pt_val, float) and pd.isna(manual_pt_val)):
+                    try:
+                        manual_pt = int(manual_pt_val)
+                    except (ValueError, TypeError):
+                        manual_pt = None
+
+                new_members.append({
+                    "name": name,
+                    "role": role_key,
+                    "skill_type": str(row.get("スキル手当区分", "なし")),
+                    "manual_pt": manual_pt,
+                })
+            cx_config["members"] = new_members
+            cx_config["month"] = month_str
+
+            if save_cx_config(cx_config, month_str):
+                st.success(f"✅ {year_label}年{month_label}月のCX設定を保存しました。")
+                st.rerun()
+            else:
+                st.error("❌ 保存に失敗しました。")
+
+    # ============================================================
+    # 計算結果タブ
+    # ============================================================
+    with tab_result:
+        st.markdown(f"### {year_label}年{month_label}月 インセンティブ計算結果")
+
+        # 入力チェック
+        if cx_config.get("cx_total_points", 0) <= 0:
+            st.warning("⚠️ 設定タブで「当月CXポイント原資」を入力して保存してください。")
+            return
+        if not cx_config.get("members"):
+            st.warning("⚠️ 設定タブでスタッフ情報を保存してください。")
+            return
+
+        # 既存のランキングデータを再計算（読み取りのみ・既存ロジックを流用）
+        shop_rank_df = None
+        team_rank_df = None
+        individual_scored_df = None
+
+        if df is not None and not df.empty:
+            try:
+                config_with_master = dict(config)
+                config_with_master["_user_master"] = user_master
+
+                df_sorted = apply_robust_sorting(df, user_master, "スタッフ名", "店舗名", "チーム名")
+
+                df_orders_path = os.path.join(DATA_DIR, "daily_orders.csv")
+                df_terms_path = os.path.join(DATA_DIR, "daily_terminals.csv")
+                df_orders_cx = pd.read_csv(df_orders_path) if os.path.exists(df_orders_path) else pd.DataFrame()
+                df_terms_cx = pd.read_csv(df_terms_path) if os.path.exists(df_terms_path) else pd.DataFrame()
+                df_users_cx = pd.DataFrame(user_master.get("users", []))
+
+                df_denom_cx = calculate_denominators(df_sorted, df_orders_cx, df_terms_cx, df_users_cx)
+                individual_scored_df = calculate_scores(df_sorted, config_with_master, df_denom_cx)
+                team_rank_df = aggregate_team_scores(individual_scored_df, df_sorted, config_with_master)
+                shop_rank_df = aggregate_shop_scores(individual_scored_df, df_sorted, config_with_master)
+            except Exception as e:
+                st.warning(f"⚠️ ランキングデータ取得中にエラーが発生しました: {e}")
+
+        # CX計算実行
+        try:
+            calc_result = calculate_cx_distribution(
+                cx_config,
+                shop_rank_df,
+                team_rank_df,
+                individual_scored_df,
+                user_master,
+            )
+        except Exception as e:
+            st.error(f"❌ 計算エラー: {e}")
+            return
+
+        mode = calc_result["mode"]
+        pt_unit_price = calc_result["pt_unit_price"]
+        step1 = calc_result["step1"]
+        step3 = calc_result["step3"]
+        results = step3["results"]
+
+        # サマリー表示
+        mode_label = "モードA（移行期間）" if mode == "A" else "モードB（完全分配）"
+        st.markdown(f"**計算モード：** {mode_label}")
+
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        with col_s1:
+            st.metric("当月CXポイント原資", f"¥{cx_config['cx_total_points']:,}")
+        with col_s2:
+            st.metric("固定費総額（旧手当合計）", f"¥{step1['fixed_cost_total']:,}")
+        with col_s3:
+            st.metric("変動分配用余剰原資", f"¥{int(step1['surplus_fund']):,}")
+        with col_s4:
+            st.metric("1Ptあたり単価", f"¥{pt_unit_price:,.2f}")
+
+        st.markdown("---")
+        st.caption(f"📌 今月の1Pt単価：¥{pt_unit_price:,.2f} / pt　（ベースPt：{cx_config.get('base_pt', 50)}pt）")
+
+        # 詳細一覧テーブル
+        rows = []
+        for name, r in results.items():
+            row = {
+                "スタッフ名": name,
+                "役職": ROLE_LABELS.get(
+                    next((m["role"] for m in cx_config["members"] if m["name"] == name), "role_member"),
+                    "スタッフ",
+                ),
+                "ベースPt": r["base_pt"],
+                "成果Pt": r["performance_pt"],
+                "合計Pt": r["total_pt"],
+                "今月の実力歩合（円）": r["歩合額"],
+            }
+            if mode == "A":
+                row["スキル資格手当（円）"] = r["旧手当"]
+                row["最終支給額（円）"] = r["最終支給額"]
+            else:
+                row["最終支給額（円）"] = r["最終支給額"]
+
+            if r.get("is_manual"):
+                row["ベースPt"] = "（手動）"
+                row["成果Pt"] = "（手動）"
+            rows.append(row)
+
+        result_df = pd.DataFrame(rows)
+        st.dataframe(result_df, use_container_width=True, hide_index=True)
+
+        # Excelダウンロード
+        try:
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                result_df.to_excel(writer, index=False, sheet_name="CX分配結果")
+                summary_data = {
+                    "項目": ["当月CXポイント原資", "固定費総額", "変動分配用余剰原資",
+                             "システム合計ポイント", "1Pt単価", "計算モード", "ベースポイント"],
+                    "値": [
+                        f"¥{cx_config['cx_total_points']:,}",
+                        f"¥{step1['fixed_cost_total']:,}",
+                        f"¥{int(step1['surplus_fund']):,}",
+                        f"{step3['system_total_pt']:,} pt",
+                        f"¥{pt_unit_price:,.2f}",
+                        mode_label,
+                        f"{cx_config.get('base_pt', 50)} pt",
+                    ],
+                }
+                pd.DataFrame(summary_data).to_excel(writer, index=False, sheet_name="サマリー")
+            buf.seek(0)
+            st.download_button(
+                label="📥 計算結果をExcelでダウンロード",
+                data=buf.getvalue(),
+                file_name=f"CX分配結果_{month_str}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        except Exception as e:
+            st.warning(f"Excelダウンロードの生成に失敗しました: {e}")
+
+
 if __name__ == "__main__":
     main()
-
