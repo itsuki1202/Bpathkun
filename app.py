@@ -220,12 +220,13 @@ def admin_page(config, user_master, target_month=None):
             # --- ユーザー削除 ---
             st.markdown("#### ユーザーを削除")
             with st.form("del_user_form", clear_on_submit=True):
-                # superadmin ロールのユーザーは削除不可（全員保護）
-                _del_uid_list = [u["username"] for u in _users if u["role"] != "superadmin"]
+                _login_user = st.session_state.get("auth_username", "")
+                # 自分自身は選択肢から除外（サーバー側でも二重チェック）
+                _del_uid_list = [u["username"] for u in _users if u["username"] != _login_user]
                 _del_uid = st.selectbox("削除対象ユーザー", _del_uid_list) if _del_uid_list else None
                 if st.form_submit_button("削除する"):
                     if _del_uid:
-                        _ok3, _msg3 = delete_user(_ac, _del_uid)
+                        _ok3, _msg3 = delete_user(_ac, _del_uid, current_username=_login_user)
                         if _ok3:
                             st.success(_msg3)
                             st.rerun()

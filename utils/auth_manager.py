@@ -87,17 +87,27 @@ def add_user(config: dict, username: str, display_name: str, email: str,
     return True, f"ユーザー「{username}」を追加しました"
 
 
-def delete_user(config: dict, username: str) -> tuple:
+def delete_user(config: dict, username: str, current_username: str = "") -> tuple:
     """
     ユーザーを削除する
+    ルール:
+      - 自分自身は削除不可
+      - superadmin が1人だけの場合は削除不可（最低1人保持）
     Returns: (成功フラグ, メッセージ)
     """
     usernames = config.get("credentials", {}).get("usernames", {})
     if username not in usernames:
         return False, f"ユーザーID「{username}」は存在しません"
-    # superadmin ロールのユーザーは削除不可
+    # 自分自身は削除不可
+    if username == current_username:
+        return False, "自分自身のアカウントは削除できません"
+    # superadmin が対象の場合：残り1人なら削除不可
     if usernames[username].get("role") == "superadmin":
-        return False, f"最高管理者アカウントは削除できません"
+        superadmin_count = sum(
+            1 for u in usernames.values() if u.get("role") == "superadmin"
+        )
+        if superadmin_count <= 1:
+            return False, "最高管理者が1人しかいないため削除できません（最低1人必要）"
     del usernames[username]
     config["credentials"]["usernames"] = usernames
     save_auth_config(config)
