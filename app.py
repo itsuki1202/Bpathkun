@@ -3087,18 +3087,9 @@ def main():
         st.session_state["auth_name"] = name
         st.session_state["auth_username"] = username
 
-        # ログアウトボタン（サイドバー）- use_container_width=Trueで全幅表示
-        if st.sidebar.button("ログアウト", use_container_width=True, type="secondary"):
-            # セッションをクリアしてログアウト
-            for key in ["_logged_username", "user_role", "auth_name", "auth_username",
-                        "current_mode", "is_admin"]:
-                if key in st.session_state:
-                    del st.session_state[key]
-            # streamlit-authenticatorのセッション変数もクリア
-            for key in list(st.session_state.keys()):
-                if key.startswith("FormSubmitter") or key == "authentication_status" or key == "name" or key == "username":
-                    del st.session_state[key]
-            st.rerun()
+        # ログアウトボタン（サイドバー）
+        # authenticator.logout() を使うことでクッキーも正しく削除される
+        authenticator.logout("ログアウト", location="sidebar", key="logout_btn")
 
     st.title("ブライトパスくん")
 
